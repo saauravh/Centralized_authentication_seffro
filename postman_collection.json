@@ -1,0 +1,755 @@
+{
+  "info": {
+    "name": "Central Auth SSO — Full API Collection",
+    "description": "Complete API collection for the Central Auth SSO system.\n\nCovers:\n- Identity Server (internal, dev only)\n- Hellpu Central Auth (/api/central/*)\n- Seffro Central Auth (/api/central/*)\n- Web SSO login flows (cross-platform)\n\n📌 Set variables at the collection level before testing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "auth_url",
+      "value": "http://localhost:3001",
+      "type": "string"
+    },
+    {
+      "key": "helppu_url",
+      "value": "http://admin.helppu.com",
+      "type": "string"
+    },
+    {
+      "key": "seffro_url",
+      "value": "https://in.seffro.com",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "sso_test@example.com",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "Test@1234",
+      "type": "string"
+    },
+    {
+      "key": "first_name",
+      "value": "John",
+      "type": "string"
+    },
+    {
+      "key": "last_name",
+      "value": "Doe",
+      "type": "string"
+    },
+    {
+      "key": "phone",
+      "value": "+1234567890",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "central_user_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Identity Server (internal)",
+      "description": "These call the central Node.js identity server directly.\nUse for dev/testing only — mobile apps NEVER call these directly.",
+      "item": [
+        {
+          "name": "Register on Identity Server",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
+                  "    pm.collectionVariables.set('access_token', json.accessToken);",
+                  "    pm.collectionVariables.set('refresh_token', json.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"{{phone}}\"\n}"
+            },
+            "url": {
+              "raw": "{{auth_url}}/api/auth/register",
+              "host": ["{{auth_url}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "description": "Register a new central identity. Phone can be omitted if not available."
+          }
+        },
+        {
+          "name": "Login on Identity Server",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
+                  "    pm.collectionVariables.set('access_token', json.accessToken);",
+                  "    pm.collectionVariables.set('refresh_token', json.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{auth_url}}/api/auth/login",
+              "host": ["{{auth_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{auth_url}}/api/auth/refresh",
+              "host": ["{{auth_url}}"],
+              "path": ["api", "auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Verify Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"access_token\": \"{{access_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{auth_url}}/api/auth/verify",
+              "host": ["{{auth_url}}"],
+              "path": ["api", "auth", "verify"]
+            }
+          }
+        },
+        {
+          "name": "Get Profile (Identity Server)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "url": {
+              "raw": "{{auth_url}}/api/auth/me",
+              "host": ["{{auth_url}}"],
+              "path": ["api", "auth", "me"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{auth_url}}/api/auth/logout",
+              "host": ["{{auth_url}}"],
+              "path": ["api", "auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{auth_url}}/api/health",
+              "host": ["{{auth_url}}"],
+              "path": ["api", "health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🏠 Hellpu Central Auth (API)",
+      "description": "Mobile app endpoints for Hellpu.\nBase: http://admin.helppu.com/api/central/*",
+      "item": [
+        {
+          "name": "Register (user)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', json.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"{{phone}}\",\n  \"user_type\": \"user\"\n}"
+            },
+            "url": {
+              "raw": "{{helppu_url}}/api/central/register",
+              "host": ["{{helppu_url}}"],
+              "path": ["api", "central", "register"]
+            },
+            "description": "Register as a regular customer (user_type = user).\nAlso registers on identity server and links central_user_id."
+          }
+        },
+        {
+          "name": "Register (provider)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', json.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"provider_{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"{{phone}}\",\n  \"user_type\": \"provider\"\n}"
+            },
+            "url": {
+              "raw": "{{helppu_url}}/api/central/register",
+              "host": ["{{helppu_url}}"],
+              "path": ["api", "central", "register"]
+            },
+            "description": "Register as a service provider (user_type = provider)."
+          }
+        },
+        {
+          "name": "Register (handyman)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', json.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"handyman_{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"{{phone}}\",\n  \"user_type\": \"handyman\"\n}"
+            },
+            "url": {
+              "raw": "{{helppu_url}}/api/central/register",
+              "host": ["{{helppu_url}}"],
+              "path": ["api", "central", "register"]
+            },
+            "description": "Register as a handyman/worker (user_type = handyman)."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', json.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{helppu_url}}/api/central/login",
+              "host": ["{{helppu_url}}"],
+              "path": ["api", "central", "login"]
+            },
+            "description": "Login with email + password.\nUser type is auto-detected (user/provider/handyman).\nIf user was registered on Seffro first, Hellpu auto-creates local profile."
+          }
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{helppu_url}}/api/central/refresh",
+              "host": ["{{helppu_url}}"],
+              "path": ["api", "central", "refresh"]
+            },
+            "description": "Refresh an expired access token. Stores new tokens."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', json.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{helppu_url}}/api/central/logout",
+              "host": ["{{helppu_url}}"],
+              "path": ["api", "central", "logout"]
+            },
+            "description": "Revoke refresh token on identity server."
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{central_user_id}},\n  \"user_type\": \"user\"\n}"
+            },
+            "url": {
+              "raw": "{{helppu_url}}/api/central/profile",
+              "host": ["{{helppu_url}}"],
+              "path": ["api", "central", "profile"]
+            },
+            "description": "Get local profile by central_user_id + user_type.\nChange user_type to 'provider' or 'handyman' as needed."
+          }
+        }
+      ]
+    },
+    {
+      "name": "🏪 Seffro Central Auth (API)",
+      "description": "Mobile app endpoints for Seffro.\nBase: https://in.seffro.com/api/central/*",
+      "item": [
+        {
+          "name": "Register (user)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', json.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"{{phone}}\",\n  \"user_type\": \"user\",\n  \"username\": \"john_doe\"\n}"
+            },
+            "url": {
+              "raw": "{{seffro_url}}/api/central/register",
+              "host": ["{{seffro_url}}"],
+              "path": ["api", "central", "register"]
+            },
+            "description": "Register as a regular user on Seffro.\nusername is required for user type."
+          }
+        },
+        {
+          "name": "Register (vendor)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"vendor_{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"user_type\": \"vendor\",\n  \"username\": \"vendor_john\"\n}"
+            },
+            "url": {
+              "raw": "{{seffro_url}}/api/central/register",
+              "host": ["{{seffro_url}}"],
+              "path": ["api", "central", "register"]
+            },
+            "description": "Register as a property vendor.\nNote: phone is omitted because vendors table has no phone column."
+          }
+        },
+        {
+          "name": "Register (agent)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"agent_{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"user_type\": \"agent\",\n  \"username\": \"agent_john\",\n  \"vendor_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{seffro_url}}/api/central/register",
+              "host": ["{{seffro_url}}"],
+              "path": ["api", "central", "register"]
+            },
+            "description": "Register as an agent under an existing vendor.\nvendor_id is required."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', json.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{seffro_url}}/api/central/login",
+              "host": ["{{seffro_url}}"],
+              "path": ["api", "central", "login"]
+            },
+            "description": "Login with email + password.\nUser type is auto-detected (user/vendor/agent).\nIf user was registered on Hellpu first, Seffro auto-creates local profile."
+          }
+        },
+        {
+          "name": "Refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('access_token', json.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{seffro_url}}/api/central/refresh",
+              "host": ["{{seffro_url}}"],
+              "path": ["api", "central", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{seffro_url}}/api/central/logout",
+              "host": ["{{seffro_url}}"],
+              "path": ["api", "central", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{central_user_id}},\n  \"user_type\": \"user\"\n}"
+            },
+            "url": {
+              "raw": "{{seffro_url}}/api/central/profile",
+              "host": ["{{seffro_url}}"],
+              "path": ["api", "central", "profile"]
+            },
+            "description": "Get local profile by central_user_id + user_type.\nChange user_type to 'vendor' or 'agent' as needed."
+          }
+        }
+      ]
+    },
+    {
+      "name": "🌐 Web SSO Login (Cross-Platform)",
+      "description": "Test the web-based SSO login flow.\nRegister on one platform, log in via the other platform's web form.",
+      "item": [
+        {
+          "name": "Test Flow: Register on Seffro API → Login on Hellpu Web",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "email", "value": "{{email}}", "type": "text" },
+                { "key": "password", "value": "{{password}}", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{helppu_url}}/auth/login",
+              "host": ["{{helppu_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "⚠️  PREREQUISITE: First register via Seffro API 'Register (user)' above.\n\nThen run this: it simulates logging into the Hellpu admin web form\nwith the same email+password.\n\nIf the user was registered on Seffro as 'user', this will fail\n(no auto-create for admin dashboard — expected).\n\nFor a positive test, register on Hellpu as provider/handyman first."
+          }
+        },
+        {
+          "name": "Test Flow: Register on Hellpu API → Login on Seffro Web (User)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "username", "value": "{{email}}", "type": "text" },
+                { "key": "password", "value": "{{password}}", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{seffro_url}}/user/login-submit",
+              "host": ["{{seffro_url}}"],
+              "path": ["user", "login-submit"]
+            },
+            "description": "⚠️  PREREQUISITE: First register via Hellpu API 'Register (user)' above.\n\nThen run this: it simulates logging into the Seffro user web form\nwith the same email+password.\n\nSeffro will auto-create a local User record if none exists."
+          }
+        },
+        {
+          "name": "Test Flow: Register on Seffro API → Login on Seffro Web (Vendor)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "username", "value": "vendor_{{email}}", "type": "text" },
+                { "key": "password", "value": "{{password}}", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{seffro_url}}/vendor/login/submit",
+              "host": ["{{seffro_url}}"],
+              "path": ["vendor", "login", "submit"]
+            },
+            "description": "⚠️  PREREQUISITE: First register via Seffro API 'Register (vendor)' above.\n\nThen run this: it simulates logging into the Seffro vendor web form.\nSeffro will auto-create a local Vendor record if none exists."
+          }
+        }
+      ]
+    },
+    {
+      "name": "🧪 Suggested Test Scenarios",
+      "description": "Step-by-step test flows to verify SSO is working end-to-end.",
+      "item": [
+        {
+          "name": "Scenario A: Register on Seffro → Login on Hellpu API",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "https://google.com",
+              "host": ["https://google.com"]
+            },
+            "description": "1. Set collection variables:\n   email = test_a@example.com\n   password = Test@1234\n\n2. Run: Seffro → 'Register (user)'\n   → Should return 201 with tokens\n\n3. Run: Hellpu → 'Login' (with same email+password)\n   → Should return 200 with tokens\n   → user_type should be 'user'\n   → Hellpu auto-created local profile\n\n✅ PASS: Single identity works across both platforms"
+          }
+        },
+        {
+          "name": "Scenario B: Register on Hellpu → Login on Seffro Web",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "https://google.com",
+              "host": ["https://google.com"]
+            },
+            "description": "1. Set collection variables:\n   email = test_b@example.com\n   password = Test@1234\n\n2. Run: Hellpu → 'Register (user)'\n   → Should return 201 with tokens\n\n3. Run: Web SSO → 'Test Flow: Register on Hellpu API → Login on Seffro Web'\n   → Should redirect to Seffro user dashboard\n   → Seffro auto-created local User with central_user_id\n\n✅ PASS: Web login works cross-platform with auto-create"
+          }
+        },
+        {
+          "name": "Scenario C: Admin dashboard rejects non-admin users",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "https://google.com",
+              "host": ["https://google.com"]
+            },
+            "description": "1. Set collection variables:\n   email = test_c@example.com\n   password = Test@1234\n\n2. Run: Hellpu → 'Register (user)'\n   → Created as user (people_id = 3)\n\n3. Run: Web SSO → 'Test Flow: Register on Seffro API → Login on Hellpu Web'\n   → Central auth SUCCEEDS\n   → But Hellpu has no provider/handyman record for this user\n   → Falls back to local auth → FAILS → 'Wrong credentials'\n\n✅ PASS: Security boundary maintained — customers can't access admin dashboard"
+          }
+        },
+        {
+          "name": "Scenario D: Token refresh flow",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "https://google.com",
+              "host": ["https://google.com"]
+            },
+            "description": "1. Run Hellpu → 'Login' to get tokens\n2. Wait 15 min (or manually expire the token)\n3. Run Hellpu → 'Refresh' with the stored refresh_token\n4. New access_token + refresh_token are returned\n5. Old refresh_token is revoked\n\n✅ PASS: Token lifecycle works"
+          }
+        },
+        {
+          "name": "Scenario E: Register vendor on Seffro → Login on Seffro vendor web",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "https://google.com",
+              "host": ["https://google.com"]
+            },
+            "description": "1. Set collection variables:\n   email = vendor_test@example.com\n   password = Test@1234\n\n2. Run: Seffro → 'Register (vendor)'\n   → Should return 201\n\n3. Run: Web SSO → 'Register on Seffro API → Login on Seffro Web (Vendor)'\n   → Should redirect to vendor dashboard\n   → Vendor auto-created with generated vendor_code\n\n✅ PASS: Vendor web login works"
+          }
+        }
+      ]
+    }
+  ]
+}
