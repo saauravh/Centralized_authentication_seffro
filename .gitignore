@@ -2,6 +2,12 @@
 node_modules/
 dist/
 
+# JWT signing keys. The private key can mint a valid token for any account
+# without a password, so it must never be committed. Generate per environment
+# with `npm run generate-keys` and distribute only keys/public.pem to the apps.
+keys/
+*.pem
+
 # Logs
 logs/
 *.log

@@ -1,48 +1,936 @@
 {
   "info": {
-    "name": "Central Auth SSO — Full API Collection",
-    "description": "Complete API collection for the Central Auth SSO system.\n\nCovers:\n- Identity Server (internal, dev only)\n- Hellpu Central Auth (/api/central/*)\n- Seffro Central Auth (/api/central/*)\n- Web SSO login flows (cross-platform)\n\n📌 Set variables at the collection level before testing.",
+    "_postman_id": "c3a7f1e2-5b64-4a19-9d3c-central-identity",
+    "name": "Central Identity — Seffro & Helppu",
+    "description": "# Central Identity API\n\nOne shared account across every application, with no shared login site.\n\n## Getting started\n\n1. Set `identity_url` and `service_secret` in the collection variables. Get a secret with `npm run create-client <name>` on the identity service.\n2. Run **Register**, then **Login**. Login stores `access_token` and `refresh_token` automatically, so the authenticated requests work without copying anything.\n\n## Two surfaces\n\n- **Folder 1** is the identity service itself: private, server-to-server, guarded by `X-Service-Secret`. In production this is not reachable from the internet.\n- **Folders 2 and 3** are the Laravel apps' own mobile APIs. They call folder 1 internally and additionally manage the local user record.\n\n## Things worth knowing\n\n- `register` never returns a token. Registration and authentication are separate steps, which is what makes email verification enforceable.\n- A duplicate email returns `user_exists: true` and nothing else — no central id.\n- `validate-token` is the only inspection endpoint; there is deliberately no signature-only check.\n- Logout blacklists the access token too, if you send the Authorization header.\n\nSee HOW-IT-WORKS.md for the full walkthrough.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "item": [
+    {
+      "name": "1. Identity Service (internal)",
+      "description": "Server-to-server API. Every request needs X-Service-Secret; these are called by your Laravel backends, never by a browser. Set identity_url and service_secret first.",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{identity_url}}/api/health",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "The only unauthenticated route. Use it for load-balancer probes; it does not touch the database."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ok\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/register",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Creates the identity and returns NO session — registration and authentication are separate steps.\n\n201 { central_user_id, verification_required }\n200 { user_exists: true }  — address already registered; no central id is returned, because nothing here proves the caller owns that address.\n\nSend the user to Login next.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"CorrectHorse123\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"phone\": \"5551234567\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.central_user_id) {",
+                  "  pm.collectionVariables.set('central_user_id', body.central_user_id);",
+                  "}",
+                  "pm.test(\"no session issued\", function () {",
+                  "  pm.expect(body).to.not.have.property(\"access_token\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/login",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "The only path that issues a session, and the only place email verification is enforced.\n\n200 { access_token, refresh_token, expires_in, token_type, user }\n401 wrong password, or account suspended/banned\n403 EMAIL_NOT_VERIFIED  — when REQUIRE_EMAIL_VERIFICATION is on\n423 ACCOUNT_LOCKED      — too many failed attempts\n\nSaves access_token and refresh_token to collection variables.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"CorrectHorse123\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.access_token) {",
+                  "  pm.collectionVariables.set('access_token', body.access_token);",
+                  "  pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "}",
+                  "pm.test(\"returns a session\", function () {",
+                  "  pm.expect(body).to.have.property(\"access_token\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Validate token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/validate-token",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "validate-token"
+              ]
+            },
+            "description": "The only token-inspection endpoint. Checks the signature and everything a signature cannot know: revocation, account status, verification.\n\n200 { valid: true, user }\n401 { valid: false, reason } where reason is invalid_token | token_revoked | account_inactive | email_unverified\n\nApplications verify locally with the public key on hot paths and call this periodically (CENTRAL_AUTH_REVALIDATE_EVERY) or before privileged actions."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"valid\", () => pm.expect(pm.response.json().valid).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/refresh",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Rotates the pair: the presented refresh token is spent and a new one issued. Replaying a spent token fails — which is also how token theft surfaces.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.access_token) {",
+                  "  pm.collectionVariables.set('access_token', body.access_token);",
+                  "  pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "}",
+                  "pm.test(\"returns a session\", function () {",
+                  "  pm.expect(body).to.have.property(\"access_token\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/me",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Current identity from the source of truth. Applications use it to refresh their local copy."
+          }
+        },
+        {
+          "name": "Update profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/profile",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "profile"
+              ]
+            },
+            "description": "Updates the identity fields this service owns. All fields optional; at least one required.\nAccepts: first_name, last_name, phone, email, avatar.\n\nChanging the email resets email_verified_at and sends a new verification mail, so nobody moves to an address they do not control and keeps a verified badge.\nstatus and password are NOT writable here — password has its own endpoint.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Jonathan\",\n  \"phone\": \"5559999999\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/change-password",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "change-password"
+              ]
+            },
+            "description": "Requires the current password. Revokes every existing session on success.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"CorrectHorse123\",\n  \"new_password\": \"EvenBetterPass456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/logout",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revokes the refresh token, and blacklists the access token if the Authorization header is present. Without the header the access token stays usable until it expires — send it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/forgot-password",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Emails a single-use link to PASSWORD_RESET_URL.\n\nAlways returns { success: true } — identical for unknown addresses, so this cannot be used to enumerate accounts. With SMTP_HOST unset the link is printed to the service log.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/reset-password",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "Redeems the reset token. Single-use, expiring, and validated before it is spent so a malformed request cannot burn the link.\n\nOn success every refresh token is revoked and a tokens_valid_from cutoff is set, on the assumption that a reset may be a response to compromise.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"token\": \"<token from the emailed link>\",\n  \"new_password\": \"BrandNewPass789\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Verify email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/verify-email",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "verify-email"
+              ]
+            },
+            "description": "Redeems the verification token from EMAIL_VERIFY_URL. Single-use and expiring.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"token\": \"<token from the emailed link>\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Resend verification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Service-Secret",
+                "value": "{{service_secret}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{identity_url}}/api/auth/resend-verification",
+              "host": [
+                "{{identity_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "resend-verification"
+              ]
+            },
+            "description": "Silent for unknown or already-verified addresses, same anti-enumeration rule as forgot-password.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Seffro app API",
+      "description": "Mobile/API surface exposed by 2. Seffro app API. These call the identity service internally and also create or find the local user record. Set seffro_url first.",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{seffro_url}}/api/central/register",
+              "host": [
+                "{{seffro_url}}"
+              ],
+              "path": [
+                "api",
+                "central",
+                "register"
+              ]
+            },
+            "description": "user_type is one of: user, vendor, agent.\n\nReturns no tokens — call Login next. 409 with user_exists when the address already has a central identity.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"CorrectHorse123\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"phone\": \"5551234567\",\n  \"user_type\": \"user\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{seffro_url}}/api/central/login",
+              "host": [
+                "{{seffro_url}}"
+              ],
+              "path": [
+                "api",
+                "central",
+                "login"
+              ]
+            },
+            "description": "Authenticates centrally, then finds or creates the local record. Returns the app-side tokens.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"CorrectHorse123\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.access_token) {",
+                  "  pm.collectionVariables.set('access_token', body.access_token);",
+                  "  pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "}",
+                  "pm.test(\"returns a session\", function () {",
+                  "  pm.expect(body).to.have.property(\"access_token\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{seffro_url}}/api/central/refresh",
+              "host": [
+                "{{seffro_url}}"
+              ],
+              "path": [
+                "api",
+                "central",
+                "refresh"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{seffro_url}}/api/central/logout",
+              "host": [
+                "{{seffro_url}}"
+              ],
+              "path": [
+                "api",
+                "central",
+                "logout"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{seffro_url}}/api/central/profile",
+              "host": [
+                "{{seffro_url}}"
+              ],
+              "path": [
+                "api",
+                "central",
+                "profile"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{central_user_id}}\",\n  \"user_type\": \"user\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Helppu app API",
+      "description": "Mobile/API surface exposed by 3. Helppu app API. These call the identity service internally and also create or find the local user record. Set helppu_url first.",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{helppu_url}}/api/central/register",
+              "host": [
+                "{{helppu_url}}"
+              ],
+              "path": [
+                "api",
+                "central",
+                "register"
+              ]
+            },
+            "description": "user_type is one of: user, provider, handyman.\n\nReturns no tokens — call Login next. 409 with user_exists when the address already has a central identity.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"CorrectHorse123\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"phone\": \"5551234567\",\n  \"user_type\": \"user\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{helppu_url}}/api/central/login",
+              "host": [
+                "{{helppu_url}}"
+              ],
+              "path": [
+                "api",
+                "central",
+                "login"
+              ]
+            },
+            "description": "Authenticates centrally, then finds or creates the local record. Returns the app-side tokens.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"CorrectHorse123\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.access_token) {",
+                  "  pm.collectionVariables.set('access_token', body.access_token);",
+                  "  pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "}",
+                  "pm.test(\"returns a session\", function () {",
+                  "  pm.expect(body).to.have.property(\"access_token\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{helppu_url}}/api/central/refresh",
+              "host": [
+                "{{helppu_url}}"
+              ],
+              "path": [
+                "api",
+                "central",
+                "refresh"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{helppu_url}}/api/central/logout",
+              "host": [
+                "{{helppu_url}}"
+              ],
+              "path": [
+                "api",
+                "central",
+                "logout"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{helppu_url}}/api/central/profile",
+              "host": [
+                "{{helppu_url}}"
+              ],
+              "path": [
+                "api",
+                "central",
+                "profile"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{central_user_id}}\",\n  \"user_type\": \"user\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Password reset pages (browser)",
+      "description": "Web pages, not API. The identity service emails links here — PASSWORD_RESET_URL must point at central/password/reset on one of these hosts. Open them in a browser; they are listed so the whole flow is documented in one place.",
+      "item": [
+        {
+          "name": "Forgot password form",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{seffro_url}}/central/password/forgot",
+              "host": [
+                "{{seffro_url}}"
+              ],
+              "path": [
+                "central",
+                "password",
+                "forgot"
+              ]
+            },
+            "description": "Renders the form. POST to the same path sends the email."
+          }
+        },
+        {
+          "name": "Reset password page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{seffro_url}}/central/password/reset?token=<token>&email=<email>",
+              "host": [
+                "{{seffro_url}}"
+              ],
+              "path": [
+                "central",
+                "password",
+                "reset?token=<token>&email=<email>"
+              ]
+            },
+            "description": "Landing page for the emailed link. POST to the same path completes the reset."
+          }
+        }
+      ]
+    }
+  ],
   "variable": [
     {
-      "key": "auth_url",
+      "key": "identity_url",
       "value": "http://localhost:3001",
       "type": "string"
     },
     {
-      "key": "helppu_url",
-      "value": "http://admin.helppu.com",
-      "type": "string"
-    },
-    {
       "key": "seffro_url",
-      "value": "https://in.seffro.com",
+      "value": "http://localhost:8000",
       "type": "string"
     },
     {
-      "key": "email",
-      "value": "sso_test@example.com",
+      "key": "helppu_url",
+      "value": "http://localhost:8001",
       "type": "string"
     },
     {
-      "key": "password",
-      "value": "Test@1234",
-      "type": "string"
-    },
-    {
-      "key": "first_name",
-      "value": "John",
-      "type": "string"
-    },
-    {
-      "key": "last_name",
-      "value": "Doe",
-      "type": "string"
-    },
-    {
-      "key": "phone",
-      "value": "+1234567890",
+      "key": "service_secret",
+      "value": "",
       "type": "string"
     },
     {
@@ -59,697 +947,6 @@
       "key": "central_user_id",
       "value": "",
       "type": "string"
-    }
-  ],
-  "item": [
-    {
-      "name": "🔐 Identity Server (internal)",
-      "description": "These call the central Node.js identity server directly.\nUse for dev/testing only — mobile apps NEVER call these directly.",
-      "item": [
-        {
-          "name": "Register on Identity Server",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "    var json = pm.response.json();",
-                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
-                  "    pm.collectionVariables.set('access_token', json.accessToken);",
-                  "    pm.collectionVariables.set('refresh_token', json.refreshToken);",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"{{phone}}\"\n}"
-            },
-            "url": {
-              "raw": "{{auth_url}}/api/auth/register",
-              "host": ["{{auth_url}}"],
-              "path": ["api", "auth", "register"]
-            },
-            "description": "Register a new central identity. Phone can be omitted if not available."
-          }
-        },
-        {
-          "name": "Login on Identity Server",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    var json = pm.response.json();",
-                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
-                  "    pm.collectionVariables.set('access_token', json.accessToken);",
-                  "    pm.collectionVariables.set('refresh_token', json.refreshToken);",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
-            },
-            "url": {
-              "raw": "{{auth_url}}/api/auth/login",
-              "host": ["{{auth_url}}"],
-              "path": ["api", "auth", "login"]
-            }
-          }
-        },
-        {
-          "name": "Refresh Token",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
-            },
-            "url": {
-              "raw": "{{auth_url}}/api/auth/refresh",
-              "host": ["{{auth_url}}"],
-              "path": ["api", "auth", "refresh"]
-            }
-          }
-        },
-        {
-          "name": "Verify Token",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"access_token\": \"{{access_token}}\"\n}"
-            },
-            "url": {
-              "raw": "{{auth_url}}/api/auth/verify",
-              "host": ["{{auth_url}}"],
-              "path": ["api", "auth", "verify"]
-            }
-          }
-        },
-        {
-          "name": "Get Profile (Identity Server)",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{access_token}}" }
-            ],
-            "url": {
-              "raw": "{{auth_url}}/api/auth/me",
-              "host": ["{{auth_url}}"],
-              "path": ["api", "auth", "me"]
-            }
-          }
-        },
-        {
-          "name": "Logout",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
-            },
-            "url": {
-              "raw": "{{auth_url}}/api/auth/logout",
-              "host": ["{{auth_url}}"],
-              "path": ["api", "auth", "logout"]
-            }
-          }
-        },
-        {
-          "name": "Health Check",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{auth_url}}/api/health",
-              "host": ["{{auth_url}}"],
-              "path": ["api", "health"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "🏠 Hellpu Central Auth (API)",
-      "description": "Mobile app endpoints for Hellpu.\nBase: http://admin.helppu.com/api/central/*",
-      "item": [
-        {
-          "name": "Register (user)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "    var json = pm.response.json();",
-                  "    pm.collectionVariables.set('access_token', json.access_token);",
-                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
-                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"{{phone}}\",\n  \"user_type\": \"user\"\n}"
-            },
-            "url": {
-              "raw": "{{helppu_url}}/api/central/register",
-              "host": ["{{helppu_url}}"],
-              "path": ["api", "central", "register"]
-            },
-            "description": "Register as a regular customer (user_type = user).\nAlso registers on identity server and links central_user_id."
-          }
-        },
-        {
-          "name": "Register (provider)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "    var json = pm.response.json();",
-                  "    pm.collectionVariables.set('access_token', json.access_token);",
-                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
-                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"provider_{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"{{phone}}\",\n  \"user_type\": \"provider\"\n}"
-            },
-            "url": {
-              "raw": "{{helppu_url}}/api/central/register",
-              "host": ["{{helppu_url}}"],
-              "path": ["api", "central", "register"]
-            },
-            "description": "Register as a service provider (user_type = provider)."
-          }
-        },
-        {
-          "name": "Register (handyman)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "    var json = pm.response.json();",
-                  "    pm.collectionVariables.set('access_token', json.access_token);",
-                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
-                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"handyman_{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"{{phone}}\",\n  \"user_type\": \"handyman\"\n}"
-            },
-            "url": {
-              "raw": "{{helppu_url}}/api/central/register",
-              "host": ["{{helppu_url}}"],
-              "path": ["api", "central", "register"]
-            },
-            "description": "Register as a handyman/worker (user_type = handyman)."
-          }
-        },
-        {
-          "name": "Login",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    var json = pm.response.json();",
-                  "    pm.collectionVariables.set('access_token', json.access_token);",
-                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
-                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
-            },
-            "url": {
-              "raw": "{{helppu_url}}/api/central/login",
-              "host": ["{{helppu_url}}"],
-              "path": ["api", "central", "login"]
-            },
-            "description": "Login with email + password.\nUser type is auto-detected (user/provider/handyman).\nIf user was registered on Seffro first, Hellpu auto-creates local profile."
-          }
-        },
-        {
-          "name": "Refresh",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
-            },
-            "url": {
-              "raw": "{{helppu_url}}/api/central/refresh",
-              "host": ["{{helppu_url}}"],
-              "path": ["api", "central", "refresh"]
-            },
-            "description": "Refresh an expired access token. Stores new tokens."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    var json = pm.response.json();",
-                  "    pm.collectionVariables.set('access_token', json.access_token);",
-                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ]
-        },
-        {
-          "name": "Logout",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
-            },
-            "url": {
-              "raw": "{{helppu_url}}/api/central/logout",
-              "host": ["{{helppu_url}}"],
-              "path": ["api", "central", "logout"]
-            },
-            "description": "Revoke refresh token on identity server."
-          }
-        },
-        {
-          "name": "Get Profile",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"user_id\": {{central_user_id}},\n  \"user_type\": \"user\"\n}"
-            },
-            "url": {
-              "raw": "{{helppu_url}}/api/central/profile",
-              "host": ["{{helppu_url}}"],
-              "path": ["api", "central", "profile"]
-            },
-            "description": "Get local profile by central_user_id + user_type.\nChange user_type to 'provider' or 'handyman' as needed."
-          }
-        }
-      ]
-    },
-    {
-      "name": "🏪 Seffro Central Auth (API)",
-      "description": "Mobile app endpoints for Seffro.\nBase: https://in.seffro.com/api/central/*",
-      "item": [
-        {
-          "name": "Register (user)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "    var json = pm.response.json();",
-                  "    pm.collectionVariables.set('access_token', json.access_token);",
-                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
-                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"phone\": \"{{phone}}\",\n  \"user_type\": \"user\",\n  \"username\": \"john_doe\"\n}"
-            },
-            "url": {
-              "raw": "{{seffro_url}}/api/central/register",
-              "host": ["{{seffro_url}}"],
-              "path": ["api", "central", "register"]
-            },
-            "description": "Register as a regular user on Seffro.\nusername is required for user type."
-          }
-        },
-        {
-          "name": "Register (vendor)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"vendor_{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"user_type\": \"vendor\",\n  \"username\": \"vendor_john\"\n}"
-            },
-            "url": {
-              "raw": "{{seffro_url}}/api/central/register",
-              "host": ["{{seffro_url}}"],
-              "path": ["api", "central", "register"]
-            },
-            "description": "Register as a property vendor.\nNote: phone is omitted because vendors table has no phone column."
-          }
-        },
-        {
-          "name": "Register (agent)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"agent_{{email}}\",\n  \"password\": \"{{password}}\",\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"user_type\": \"agent\",\n  \"username\": \"agent_john\",\n  \"vendor_id\": 1\n}"
-            },
-            "url": {
-              "raw": "{{seffro_url}}/api/central/register",
-              "host": ["{{seffro_url}}"],
-              "path": ["api", "central", "register"]
-            },
-            "description": "Register as an agent under an existing vendor.\nvendor_id is required."
-          }
-        },
-        {
-          "name": "Login",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    var json = pm.response.json();",
-                  "    pm.collectionVariables.set('access_token', json.access_token);",
-                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
-                  "    pm.collectionVariables.set('central_user_id', json.user.id.toString());",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
-            },
-            "url": {
-              "raw": "{{seffro_url}}/api/central/login",
-              "host": ["{{seffro_url}}"],
-              "path": ["api", "central", "login"]
-            },
-            "description": "Login with email + password.\nUser type is auto-detected (user/vendor/agent).\nIf user was registered on Hellpu first, Seffro auto-creates local profile."
-          }
-        },
-        {
-          "name": "Refresh",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    var json = pm.response.json();",
-                  "    pm.collectionVariables.set('access_token', json.access_token);",
-                  "    pm.collectionVariables.set('refresh_token', json.refresh_token);",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
-            },
-            "url": {
-              "raw": "{{seffro_url}}/api/central/refresh",
-              "host": ["{{seffro_url}}"],
-              "path": ["api", "central", "refresh"]
-            }
-          }
-        },
-        {
-          "name": "Logout",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
-            },
-            "url": {
-              "raw": "{{seffro_url}}/api/central/logout",
-              "host": ["{{seffro_url}}"],
-              "path": ["api", "central", "logout"]
-            }
-          }
-        },
-        {
-          "name": "Get Profile",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"user_id\": {{central_user_id}},\n  \"user_type\": \"user\"\n}"
-            },
-            "url": {
-              "raw": "{{seffro_url}}/api/central/profile",
-              "host": ["{{seffro_url}}"],
-              "path": ["api", "central", "profile"]
-            },
-            "description": "Get local profile by central_user_id + user_type.\nChange user_type to 'vendor' or 'agent' as needed."
-          }
-        }
-      ]
-    },
-    {
-      "name": "🌐 Web SSO Login (Cross-Platform)",
-      "description": "Test the web-based SSO login flow.\nRegister on one platform, log in via the other platform's web form.",
-      "item": [
-        {
-          "name": "Test Flow: Register on Seffro API → Login on Hellpu Web",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
-            ],
-            "body": {
-              "mode": "urlencoded",
-              "urlencoded": [
-                { "key": "email", "value": "{{email}}", "type": "text" },
-                { "key": "password", "value": "{{password}}", "type": "text" }
-              ]
-            },
-            "url": {
-              "raw": "{{helppu_url}}/auth/login",
-              "host": ["{{helppu_url}}"],
-              "path": ["auth", "login"]
-            },
-            "description": "⚠️  PREREQUISITE: First register via Seffro API 'Register (user)' above.\n\nThen run this: it simulates logging into the Hellpu admin web form\nwith the same email+password.\n\nIf the user was registered on Seffro as 'user', this will fail\n(no auto-create for admin dashboard — expected).\n\nFor a positive test, register on Hellpu as provider/handyman first."
-          }
-        },
-        {
-          "name": "Test Flow: Register on Hellpu API → Login on Seffro Web (User)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
-            ],
-            "body": {
-              "mode": "urlencoded",
-              "urlencoded": [
-                { "key": "username", "value": "{{email}}", "type": "text" },
-                { "key": "password", "value": "{{password}}", "type": "text" }
-              ]
-            },
-            "url": {
-              "raw": "{{seffro_url}}/user/login-submit",
-              "host": ["{{seffro_url}}"],
-              "path": ["user", "login-submit"]
-            },
-            "description": "⚠️  PREREQUISITE: First register via Hellpu API 'Register (user)' above.\n\nThen run this: it simulates logging into the Seffro user web form\nwith the same email+password.\n\nSeffro will auto-create a local User record if none exists."
-          }
-        },
-        {
-          "name": "Test Flow: Register on Seffro API → Login on Seffro Web (Vendor)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
-            ],
-            "body": {
-              "mode": "urlencoded",
-              "urlencoded": [
-                { "key": "username", "value": "vendor_{{email}}", "type": "text" },
-                { "key": "password", "value": "{{password}}", "type": "text" }
-              ]
-            },
-            "url": {
-              "raw": "{{seffro_url}}/vendor/login/submit",
-              "host": ["{{seffro_url}}"],
-              "path": ["vendor", "login", "submit"]
-            },
-            "description": "⚠️  PREREQUISITE: First register via Seffro API 'Register (vendor)' above.\n\nThen run this: it simulates logging into the Seffro vendor web form.\nSeffro will auto-create a local Vendor record if none exists."
-          }
-        }
-      ]
-    },
-    {
-      "name": "🧪 Suggested Test Scenarios",
-      "description": "Step-by-step test flows to verify SSO is working end-to-end.",
-      "item": [
-        {
-          "name": "Scenario A: Register on Seffro → Login on Hellpu API",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "https://google.com",
-              "host": ["https://google.com"]
-            },
-            "description": "1. Set collection variables:\n   email = test_a@example.com\n   password = Test@1234\n\n2. Run: Seffro → 'Register (user)'\n   → Should return 201 with tokens\n\n3. Run: Hellpu → 'Login' (with same email+password)\n   → Should return 200 with tokens\n   → user_type should be 'user'\n   → Hellpu auto-created local profile\n\n✅ PASS: Single identity works across both platforms"
-          }
-        },
-        {
-          "name": "Scenario B: Register on Hellpu → Login on Seffro Web",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "https://google.com",
-              "host": ["https://google.com"]
-            },
-            "description": "1. Set collection variables:\n   email = test_b@example.com\n   password = Test@1234\n\n2. Run: Hellpu → 'Register (user)'\n   → Should return 201 with tokens\n\n3. Run: Web SSO → 'Test Flow: Register on Hellpu API → Login on Seffro Web'\n   → Should redirect to Seffro user dashboard\n   → Seffro auto-created local User with central_user_id\n\n✅ PASS: Web login works cross-platform with auto-create"
-          }
-        },
-        {
-          "name": "Scenario C: Admin dashboard rejects non-admin users",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "https://google.com",
-              "host": ["https://google.com"]
-            },
-            "description": "1. Set collection variables:\n   email = test_c@example.com\n   password = Test@1234\n\n2. Run: Hellpu → 'Register (user)'\n   → Created as user (people_id = 3)\n\n3. Run: Web SSO → 'Test Flow: Register on Seffro API → Login on Hellpu Web'\n   → Central auth SUCCEEDS\n   → But Hellpu has no provider/handyman record for this user\n   → Falls back to local auth → FAILS → 'Wrong credentials'\n\n✅ PASS: Security boundary maintained — customers can't access admin dashboard"
-          }
-        },
-        {
-          "name": "Scenario D: Token refresh flow",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "https://google.com",
-              "host": ["https://google.com"]
-            },
-            "description": "1. Run Hellpu → 'Login' to get tokens\n2. Wait 15 min (or manually expire the token)\n3. Run Hellpu → 'Refresh' with the stored refresh_token\n4. New access_token + refresh_token are returned\n5. Old refresh_token is revoked\n\n✅ PASS: Token lifecycle works"
-          }
-        },
-        {
-          "name": "Scenario E: Register vendor on Seffro → Login on Seffro vendor web",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "https://google.com",
-              "host": ["https://google.com"]
-            },
-            "description": "1. Set collection variables:\n   email = vendor_test@example.com\n   password = Test@1234\n\n2. Run: Seffro → 'Register (vendor)'\n   → Should return 201\n\n3. Run: Web SSO → 'Register on Seffro API → Login on Seffro Web (Vendor)'\n   → Should redirect to vendor dashboard\n   → Vendor auto-created with generated vendor_code\n\n✅ PASS: Vendor web login works"
-          }
-        }
-      ]
     }
   ]
 }

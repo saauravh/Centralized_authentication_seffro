@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
-import { loadJwtKeys } from '../config/jwt';
+import { loadKeySet, KeySet, LEGACY_KID } from '../config/jwt';
 import { v4 as uuidv4 } from 'uuid';
 
 interface SeffroJwtPayload {
@@ -15,20 +15,11 @@ interface SeffroJwtPayload {
   jti: string;
 }
 
-interface TokenPair {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
-}
-
 export class TokenService {
-  private privateKey: string;
-  private publicKey: string;
+  private keys: KeySet;
 
   constructor() {
-    const keys = loadJwtKeys();
-    this.privateKey = keys.privateKey;
-    this.publicKey = keys.publicKey;
+    this.keys = loadKeySet();
   }
 
   generateAccessToken(user: {
@@ -36,7 +27,7 @@ export class TokenService {
     email: string;
     first_name: string;
     last_name: string;
-    email_verified: number;
+    email_verified_at: Date | null;
   }): string {
     const now = Math.floor(Date.now() / 1000);
     const payload: SeffroJwtPayload = {
@@ -45,18 +36,38 @@ export class TokenService {
       email: user.email,
       first_name: user.first_name,
       last_name: user.last_name,
-      email_verified: user.email_verified === 1,
+      email_verified: user.email_verified_at !== null,
       iat: now,
       exp: now + config.jwt.accessTtl,
       jti: uuidv4(),
     };
 
-    return jwt.sign(payload, this.privateKey, { algorithm: 'RS256' });
+    return jwt.sign(payload, this.keys.privateKey, {
+      algorithm: 'RS256',
+      // The internal placeholder never goes on the wire — a token from the
+      // pre-rotation layout stays header-less, exactly as it was before.
+      ...(this.keys.activeKid === LEGACY_KID ? {} : { keyid: this.keys.activeKid }),
+    });
   }
 
+  /**
+   * Verifies against the key the token names.
+   *
+   * `kid` selects which of our public keys to try — it is a lookup, not a
+   * credential. An unrecognised or absent kid falls back to the single trusted
+   * key when there is exactly one, which is what lets tokens minted before
+   * rotation survive the cutover; with several keys loaded, a token that names
+   * none of them is rejected rather than tried against each in turn.
+   */
   verifyAccessToken(token: string): SeffroJwtPayload {
+    const key = this.publicKeyFor(token);
+
+    if (!key) {
+      throw new Error('Invalid token');
+    }
+
     try {
-      const decoded = jwt.verify(token, this.publicKey, {
+      const decoded = jwt.verify(token, key, {
         algorithms: ['RS256'],
         issuer: config.jwt.issuer,
       });
@@ -69,45 +80,47 @@ export class TokenService {
     }
   }
 
-  getPublicKey(): string {
-    return this.publicKey;
+  private publicKeyFor(token: string): string | null {
+    const kid = readKid(token);
+
+    if (kid) {
+      return this.keys.publicKeys.get(kid) ?? null;
+    }
+
+    // No kid: either a pre-rotation token, or a forged header. Only unambiguous
+    // when we trust exactly one key.
+    if (this.keys.publicKeys.size === 1) {
+      return [...this.keys.publicKeys.values()][0];
+    }
+
+    return this.keys.publicKeys.get(LEGACY_KID) ?? null;
   }
 
-  getJwks(): { keys: any[] } {
-    const pubKey = this.publicKey;
-    const pemLines = pubKey
-      .replace('-----BEGIN PUBLIC KEY-----', '')
-      .replace('-----END PUBLIC KEY-----', '')
-      .replace(/\n/g, '');
-    const buf = Buffer.from(pemLines, 'base64');
-
-    const modulusStart = 25; // ASN.1 offset for RSA public key
-    const modulusLength = buf.readUInt32BE(modulusStart + 1);
-    const modulus = buf.subarray(modulusStart + 5, modulusStart + 5 + modulusLength);
-
-    const expStart = modulusStart + 5 + modulusLength + 4;
-    const exponentLength = buf[expStart - 1];
-    const exponent = buf.subarray(expStart, expStart + exponentLength);
-
-    return {
-      keys: [
-        {
-          kty: 'RSA',
-          use: 'sig',
-          alg: 'RS256',
-          kid: 'key-2026-01',
-          n: this.base64url(modulus),
-          e: this.base64url(exponent),
-        },
-      ],
-    };
+  /** kid of the key currently signing tokens. Exposed for diagnostics. */
+  getActiveKid(): string {
+    return this.keys.activeKid;
   }
 
-  private base64url(buffer: Buffer): string {
-    return buffer
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '');
+  /**
+   * The apps verify tokens with these, deployed as CENTRAL_AUTH_PUBLIC_KEYS.
+   * There is no JWKS endpoint: JWKS exists so unknown third-party clients can
+   * discover a key, and every consumer here is one of ours, configured at
+   * deploy time.
+   */
+  getPublicKeys(): Record<string, string> {
+    return Object.fromEntries(this.keys.publicKeys);
+  }
+}
+
+/** Reads the kid from the JWT header without verifying anything. */
+function readKid(token: string): string | null {
+  const segment = token.split('.')[0];
+  if (!segment) return null;
+
+  try {
+    const header = JSON.parse(Buffer.from(segment, 'base64url').toString('utf8'));
+    return typeof header.kid === 'string' ? header.kid : null;
+  } catch {
+    return null;
   }
 }

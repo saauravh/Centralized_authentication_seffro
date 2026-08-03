@@ -5,7 +5,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserRepository = void 0;
 const database_1 = require("../config/database");
-const bcrypt_1 = __importDefault(require("bcrypt"));
+// bcryptjs, not the native bcrypt: it emits the same $2b$ hashes but needs no
+// C++ toolchain, so the service builds identically on every deploy target.
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const crypto_1 = __importDefault(require("crypto"));
 const SALT_ROUNDS = 10;
 class UserRepository {
     async findByEmail(email) {
@@ -14,33 +17,91 @@ class UserRepository {
     async findById(id) {
         return (0, database_1.queryOne)('SELECT * FROM central_users WHERE id = ?', [id]);
     }
+    /** Lookup by the public identifier, for anything that came from outside. */
+    async findByUuid(uuid) {
+        return (0, database_1.queryOne)('SELECT * FROM central_users WHERE uuid = ?', [uuid]);
+    }
     async create(input) {
-        const hashedPassword = await bcrypt_1.default.hash(input.password, SALT_ROUNDS);
-        const result = await (0, database_1.query)(`INSERT INTO central_users (email, password, first_name, last_name, phone)
-       VALUES (?, ?, ?, ?, ?)`, [input.email, hashedPassword, input.first_name, input.last_name, input.phone || null]);
+        const hashedPassword = await bcryptjs_1.default.hash(input.password, SALT_ROUNDS);
+        const result = await (0, database_1.query)(`INSERT INTO central_users (uuid, email, password, first_name, last_name, phone)
+       VALUES (?, ?, ?, ?, ?, ?)`, [
+            crypto_1.default.randomUUID(),
+            input.email,
+            hashedPassword,
+            input.first_name,
+            input.last_name,
+            input.phone || null,
+        ]);
         return this.findById(result.insertId);
+    }
+    /**
+     * Failed-login bookkeeping for account lockout.
+     *
+     * Persisted rather than held in the in-memory rate limiter so a lockout
+     * survives a restart and is visible to support staff looking at the account.
+     */
+    async recordFailedLogin(id, threshold, lockSeconds) {
+        await (0, database_1.query)(`UPDATE central_users
+       SET failed_login_attempts = failed_login_attempts + 1,
+           locked_until = IF(failed_login_attempts + 1 >= ?, DATE_ADD(NOW(), INTERVAL ? SECOND), locked_until)
+       WHERE id = ?`, [threshold, lockSeconds, id]);
+    }
+    async clearFailedLogins(id) {
+        await (0, database_1.query)('UPDATE central_users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?', [id]);
+    }
+    isLocked(user) {
+        return user.locked_until !== null && new Date(user.locked_until).getTime() > Date.now();
     }
     async updateLastLogin(id) {
         await (0, database_1.query)('UPDATE central_users SET last_login_at = NOW() WHERE id = ?', [id]);
     }
     async verifyEmail(id) {
-        await (0, database_1.query)('UPDATE central_users SET email_verified = 1 WHERE id = ?', [id]);
+        await (0, database_1.query)('UPDATE central_users SET email_verified_at = NOW() WHERE id = ?', [id]);
+    }
+    /**
+     * Partial update of the identity fields this service owns.
+     *
+     * Columns are whitelisted here rather than derived from the input keys — the
+     * caller passes a request-shaped object, and interpolating its keys into SQL
+     * would let a client write to `password` or `status`.
+     */
+    async updateProfile(id, changes) {
+        const allowed = ['first_name', 'last_name', 'phone', 'email', 'avatar', 'email_verified_at'];
+        const sets = [];
+        const values = [];
+        for (const column of allowed) {
+            const value = changes[column];
+            if (value !== undefined) {
+                sets.push(`${column} = ?`);
+                values.push(value);
+            }
+        }
+        if (sets.length > 0) {
+            values.push(id);
+            await (0, database_1.query)(`UPDATE central_users SET ${sets.join(', ')} WHERE id = ?`, values);
+        }
+        return this.findById(id);
     }
     async updatePassword(id, newPassword) {
-        const hashed = await bcrypt_1.default.hash(newPassword, SALT_ROUNDS);
+        const hashed = await bcryptjs_1.default.hash(newPassword, SALT_ROUNDS);
         await (0, database_1.query)('UPDATE central_users SET password = ? WHERE id = ?', [hashed, id]);
     }
     async comparePassword(plain, hashed) {
-        return bcrypt_1.default.compare(plain, hashed);
+        return bcryptjs_1.default.compare(plain, hashed);
     }
     toPublic(user) {
         return {
             id: user.id,
+            uuid: user.uuid,
             email: user.email,
             first_name: user.first_name,
             last_name: user.last_name,
             phone: user.phone,
-            email_verified: user.email_verified === 1,
+            avatar: user.avatar,
+            // Kept alongside the timestamp: callers overwhelmingly want the boolean,
+            // and deriving it in every consumer invites inconsistency.
+            email_verified: user.email_verified_at !== null,
+            email_verified_at: user.email_verified_at,
             status: user.status,
         };
     }

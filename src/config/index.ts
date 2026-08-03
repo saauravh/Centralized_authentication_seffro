@@ -13,25 +13,36 @@ export const config = {
     name: process.env.DB_NAME || 'central_auth',
   },
 
-  redis: {
-    host: process.env.REDIS_HOST || '127.0.0.1',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    password: process.env.REDIS_PASSWORD || undefined,
-  },
-
-  session: {
-    secret: process.env.SESSION_SECRET || 'dev-secret',
-    ttl: parseInt(process.env.SESSION_TTL || '86400000', 10),
-  },
-
   jwt: {
     issuer: process.env.JWT_ISSUER || 'seffro-identity',
     accessTtl: parseInt(process.env.JWT_ACCESS_TTL || '900', 10),
     refreshTtl: parseInt(process.env.JWT_REFRESH_TTL || '604800', 10),
+    // Directory holding active.key plus the named key pairs. Falls back to the
+    // single-pair paths below when active.key is absent.
+    keysDir: process.env.JWT_KEYS_DIR || './keys',
     privateKeyPath: process.env.JWT_PRIVATE_KEY_PATH || './keys/private.pem',
     publicKeyPath: process.env.JWT_PUBLIC_KEY_PATH || './keys/public.pem',
     privateKey: '',
     publicKey: '',
+  },
+
+  // Single-use tokens emailed to the user. Short TTLs: these arrive out of band
+  // and are the weakest link in the account-recovery chain.
+  tokens: {
+    resetTtl: parseInt(process.env.RESET_TOKEN_TTL || '3600', 10),
+    verifyTtl: parseInt(process.env.VERIFY_TOKEN_TTL || '86400', 10),
+  },
+
+  // When true, an unverified account cannot obtain a session at all. Registration
+  // never issues one either way — this governs whether login is also refused.
+  requireEmailVerification: process.env.REQUIRE_EMAIL_VERIFICATION === 'true',
+
+  // Account lockout. Complements the in-memory rate limiter: that one throttles
+  // a burst, this one survives a restart and follows the account rather than the
+  // request source, so a distributed attempt is still caught.
+  lockout: {
+    threshold: parseInt(process.env.LOCKOUT_THRESHOLD || '10', 10),
+    durationSeconds: parseInt(process.env.LOCKOUT_DURATION || '900', 10),
   },
 
   smtp: {
@@ -42,12 +53,18 @@ export const config = {
     from: process.env.SMTP_FROM || 'noreply@seffro.com',
   },
 
-  cors: {
-    origin: process.env.CORS_ORIGIN || '*',
+  // Where emailed links point. These are pages in the consumer apps, not here —
+  // the identity service has no user-facing UI in this architecture.
+  links: {
+    resetUrl: process.env.PASSWORD_RESET_URL || 'http://localhost:8000/central/password/reset',
+    verifyUrl: process.env.EMAIL_VERIFY_URL || 'http://localhost:8000/central/email/verify',
   },
 
-  cookie: {
-    domain: process.env.COOKIE_DOMAIN || '.seffro.com',
-    secret: process.env.COOKIE_SECRET || 'cookie-secret',
+  // Shared secret the Laravel apps present on every call. This API can mint
+  // tokens for any account, so it must never be reachable unauthenticated.
+  serviceSecret: process.env.SERVICE_SECRET || '',
+
+  cors: {
+    origin: process.env.CORS_ORIGIN || '*',
   },
 };
