@@ -1,9 +1,13 @@
 import { createApp } from './app';
 import { config } from './config';
 import { logger } from './utils/logger';
+import { assertServiceCredentials } from './middleware/serviceAuth';
+import { ServiceClientRepository } from './repositories/ServiceClientRepository';
 
 async function main() {
   try {
+    await assertServiceCredentials(new ServiceClientRepository());
+
     const app = await createApp();
 
     app.listen(config.port, () => {

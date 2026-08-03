@@ -1,28 +1,36 @@
 import express from 'express';
-import session from 'express-session';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
-import path from 'path';
 import { config } from './config';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { UserRepository } from './repositories/UserRepository';
 import { TokenRepository } from './repositories/TokenRepository';
+import { AuthTokenRepository } from './repositories/AuthTokenRepository';
+import { LoginHistoryRepository } from './repositories/LoginHistoryRepository';
+import { RevocationRepository } from './repositories/RevocationRepository';
+import { ServiceClientRepository } from './repositories/ServiceClientRepository';
 import { TokenService } from './services/TokenService';
+import { EmailService } from './services/EmailService';
 import { AuthService } from './services/AuthService';
 import { AuthController } from './controllers/AuthController';
-import { OAuthController } from './controllers/OAuthController';
 import { createRoutes } from './routes';
 
+/**
+ * Headless identity service.
+ *
+ * No view engine and no session middleware: this process serves JSON to our own
+ * Laravel backends and nothing else. Users never reach it with a browser.
+ */
 export async function createApp() {
   const app = express();
 
-  // View engine for auth pages
-  app.set('view engine', 'ejs');
-  app.set('views', path.resolve(__dirname, '../views'));
+  // Requests arrive from the Laravel backends, which forward the end user's
+  // address. Without this, req.ip is always the app server and the per-IP rate
+  // limits are meaningless.
+  app.set('trust proxy', true);
 
-  // Middleware
   app.use(helmet());
   app.use(cors({
     origin: config.cors.origin || true,
@@ -32,34 +40,29 @@ export async function createApp() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Session (for OAuth authorization page)
-  app.use(session({
-    secret: config.session.secret,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: config.nodeEnv === 'production',
-      httpOnly: true,
-      maxAge: config.session.ttl,
-      sameSite: 'lax',
-      domain: config.nodeEnv === 'production' ? config.cookie.domain : undefined,
-    },
-  }));
-
   // Services
   const userRepo = new UserRepository();
   const tokenRepo = new TokenRepository();
+  const authTokenRepo = new AuthTokenRepository();
+  const historyRepo = new LoginHistoryRepository();
+  const revocationRepo = new RevocationRepository();
+  const clientRepo = new ServiceClientRepository();
   const tokenService = new TokenService();
-  const authService = new AuthService(userRepo, tokenRepo, tokenService);
+  const emailService = new EmailService();
+  const authService = new AuthService(
+    userRepo,
+    tokenRepo,
+    tokenService,
+    authTokenRepo,
+    emailService,
+    historyRepo,
+    revocationRepo
+  );
 
-  // Controllers
   const authController = new AuthController(authService);
-  const oauthController = new OAuthController(authService, tokenService, userRepo);
 
-  // Routes
-  app.use(createRoutes(authController, oauthController, tokenService));
+  app.use(createRoutes(authController, tokenService, clientRepo));
 
-  // Error handler
   app.use(errorHandler);
 
   return app;

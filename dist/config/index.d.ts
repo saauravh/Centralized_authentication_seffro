@@ -8,23 +8,24 @@ export declare const config: {
         password: string;
         name: string;
     };
-    redis: {
-        host: string;
-        port: number;
-        password: string | undefined;
-    };
-    session: {
-        secret: string;
-        ttl: number;
-    };
     jwt: {
         issuer: string;
         accessTtl: number;
         refreshTtl: number;
+        keysDir: string;
         privateKeyPath: string;
         publicKeyPath: string;
         privateKey: string;
         publicKey: string;
+    };
+    tokens: {
+        resetTtl: number;
+        verifyTtl: number;
+    };
+    requireEmailVerification: boolean;
+    lockout: {
+        threshold: number;
+        durationSeconds: number;
     };
     smtp: {
         host: string;
@@ -33,12 +34,13 @@ export declare const config: {
         pass: string;
         from: string;
     };
+    links: {
+        resetUrl: string;
+        verifyUrl: string;
+    };
+    serviceSecret: string;
     cors: {
         origin: string;
-    };
-    cookie: {
-        domain: string;
-        secret: string;
     };
 };
 //# sourceMappingURL=index.d.ts.map
