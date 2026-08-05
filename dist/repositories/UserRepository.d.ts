@@ -30,6 +30,7 @@ export declare class UserRepository {
         email?: string;
         avatar?: string | null;
         email_verified_at?: Date | null;
+        role?: string;
     }): Promise<CentralUser>;
     updatePassword(id: number, newPassword: string): Promise<void>;
     comparePassword(plain: string, hashed: string): Promise<boolean>;

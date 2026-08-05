@@ -1,6 +1,7 @@
 import { UserRepository } from '../repositories/UserRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { AuthTokenRepository } from '../repositories/AuthTokenRepository';
+import { SsoTicketRepository, isSsoTarget } from '../repositories/SsoTicketRepository';
 import { LoginHistoryRepository, RequestContext } from '../repositories/LoginHistoryRepository';
 import { RevocationRepository } from '../repositories/RevocationRepository';
 import { TokenService } from './TokenService';
@@ -53,7 +54,8 @@ export class AuthService {
     private authTokenRepo: AuthTokenRepository,
     private emailService: EmailService,
     private historyRepo: LoginHistoryRepository,
-    private revocationRepo: RevocationRepository
+    private revocationRepo: RevocationRepository,
+    private ssoTicketRepo: SsoTicketRepository
   ) {}
 
   /**
@@ -206,6 +208,7 @@ export class AuthService {
       phone?: string | null;
       email?: string;
       avatar?: string | null;
+      role?: string;
     },
     ctx: RequestContext = {}
   ): Promise<UserPublic> {
@@ -230,6 +233,7 @@ export class AuthService {
       phone: changes.phone,
       email: changes.email,
       avatar: changes.avatar,
+      role: changes.role,
       email_verified_at: emailChanged ? null : undefined,
     });
 
@@ -419,6 +423,72 @@ export class AuthService {
     if (!user || user.email_verified_at !== null) return;
 
     await this.issueVerificationEmail(user.id, user.email);
+  }
+
+  /**
+   * Mints a single-use ticket another application can redeem for a session.
+   *
+   * Used for cross-domain SSO: a user logged into one application is redirected
+   * to a second one, which presents the ticket to redeemSsoTicket and receives a
+   * fresh session without the user typing a password again. The ticket is bound
+   * to the application it was minted for and lasts barely a minute, so a captured
+   * URL is worthless.
+   */
+  async createSsoTicket(
+    userId: number,
+    target: string,
+    ctx: RequestContext = {}
+  ): Promise<{ token: string; expiresIn: number }> {
+    if (!isSsoTarget(target)) {
+      throw new BadRequestError('Unknown SSO target');
+    }
+
+    const user = await this.userRepo.findById(userId);
+    if (!user || user.status !== 'active') {
+      throw new UnauthorizedError('User not found or inactive');
+    }
+
+    const issued = await this.ssoTicketRepo.issue(userId, target, config.tokens.ssoTtl);
+    await this.historyRepo.record(userId, 'sso_ticket_issued', ctx);
+
+    return { token: issued.token, expiresIn: config.tokens.ssoTtl };
+  }
+
+  /**
+   * Redeems a ticket issued by createSsoTicket for a fresh session.
+   *
+   * The ticket alone determines which account is affected, so a token cannot be
+   * replayed against a different person; the presented application must also be
+   * the one the ticket was minted for, so a ticket torn out of one redirect URL
+   * cannot start a session anywhere else.
+   */
+  async redeemSsoTicket(token: string, app: string, ctx: RequestContext = {}): Promise<AuthResult> {
+    const ticket = await this.ssoTicketRepo.peek(token);
+    if (!ticket) {
+      throw new BadRequestError('This sign-in link is invalid or has expired');
+    }
+
+    if (ticket.target !== app) {
+      throw new BadRequestError('This sign-in link is invalid or has expired');
+    }
+
+    const user = await this.userRepo.findById(ticket.userId);
+    if (!user || user.status !== 'active') {
+      throw new UnauthorizedError('User not found or inactive');
+    }
+
+    if (config.requireEmailVerification && user.email_verified_at === null) {
+      throw new EmailNotVerifiedError();
+    }
+
+    if (!(await this.ssoTicketRepo.consume(token))) {
+      throw new BadRequestError('This sign-in link is invalid or has expired');
+    }
+
+    await this.userRepo.updateLastLogin(user.id);
+    await this.historyRepo.record(user.id, 'sso_redeem', ctx);
+
+    return this.issueTokens(user, 'sso', ctx.ip || null);
   }
 
   private async issueVerificationEmail(userId: number, email: string): Promise<void> {

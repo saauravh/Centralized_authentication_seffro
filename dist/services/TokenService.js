@@ -22,6 +22,7 @@ class TokenService {
             first_name: user.first_name,
             last_name: user.last_name,
             email_verified: user.email_verified_at !== null,
+            role: user.role,
             iat: now,
             exp: now + config_1.config.jwt.accessTtl,
             jti: (0, uuid_1.v4)(),

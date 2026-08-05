@@ -22,5 +22,9 @@ export declare class AuthController {
     resetPassword: (req: Request, res: Response, next: NextFunction) => Promise<void | Response<any, Record<string, any>>>;
     verifyEmail: (req: Request, res: Response, next: NextFunction) => Promise<void | Response<any, Record<string, any>>>;
     resendVerification: (req: Request, res: Response, next: NextFunction) => Promise<void | Response<any, Record<string, any>>>;
+    /** Mints a single-use ticket for cross-application sign-on. */
+    createSsoTicket: (req: Request, res: Response, next: NextFunction) => Promise<void | Response<any, Record<string, any>>>;
+    /** Redeems a ticket for a fresh session, letting the user in without a password. */
+    redeemSsoTicket: (req: Request, res: Response, next: NextFunction) => Promise<void | Response<any, Record<string, any>>>;
 }
 //# sourceMappingURL=AuthController.d.ts.map

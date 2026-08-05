@@ -1,6 +1,7 @@
 import { UserRepository } from '../repositories/UserRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { AuthTokenRepository } from '../repositories/AuthTokenRepository';
+import { SsoTicketRepository } from '../repositories/SsoTicketRepository';
 import { LoginHistoryRepository, RequestContext } from '../repositories/LoginHistoryRepository';
 import { RevocationRepository } from '../repositories/RevocationRepository';
 import { TokenService } from './TokenService';
@@ -35,7 +36,8 @@ export declare class AuthService {
     private emailService;
     private historyRepo;
     private revocationRepo;
-    constructor(userRepo: UserRepository, tokenRepo: TokenRepository, tokenService: TokenService, authTokenRepo: AuthTokenRepository, emailService: EmailService, historyRepo: LoginHistoryRepository, revocationRepo: RevocationRepository);
+    private ssoTicketRepo;
+    constructor(userRepo: UserRepository, tokenRepo: TokenRepository, tokenService: TokenService, authTokenRepo: AuthTokenRepository, emailService: EmailService, historyRepo: LoginHistoryRepository, revocationRepo: RevocationRepository, ssoTicketRepo: SsoTicketRepository);
     /**
      * Creates a central identity. Deliberately issues no session.
      *
@@ -78,6 +80,7 @@ export declare class AuthService {
         phone?: string | null;
         email?: string;
         avatar?: string | null;
+        role?: string;
     }, ctx?: RequestContext): Promise<UserPublic>;
     /** Ends every session a user holds. Used for bans and forced sign-out. */
     revokeAllSessions(userId: number, ctx?: RequestContext): Promise<void>;
@@ -107,6 +110,28 @@ export declare class AuthService {
     verifyEmail(email: string, token: string, ctx?: RequestContext): Promise<UserPublic>;
     /** Silent for unknown or already-verified addresses, same rationale as forgotPassword. */
     resendVerification(email: string): Promise<void>;
+    /**
+     * Mints a single-use ticket another application can redeem for a session.
+     *
+     * Used for cross-domain SSO: a user logged into one application is redirected
+     * to a second one, which presents the ticket to redeemSsoTicket and receives a
+     * fresh session without the user typing a password again. The ticket is bound
+     * to the application it was minted for and lasts barely a minute, so a captured
+     * URL is worthless.
+     */
+    createSsoTicket(userId: number, target: string, ctx?: RequestContext): Promise<{
+        token: string;
+        expiresIn: number;
+    }>;
+    /**
+     * Redeems a ticket issued by createSsoTicket for a fresh session.
+     *
+     * The ticket alone determines which account is affected, so a token cannot be
+     * replayed against a different person; the presented application must also be
+     * the one the ticket was minted for, so a ticket torn out of one redirect URL
+     * cannot start a session anywhere else.
+     */
+    redeemSsoTicket(token: string, app: string, ctx?: RequestContext): Promise<AuthResult>;
     private issueVerificationEmail;
     private issueTokens;
 }

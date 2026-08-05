@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 exports.isExistingIdentity = isExistingIdentity;
+const SsoTicketRepository_1 = require("../repositories/SsoTicketRepository");
 const config_1 = require("../config");
 const errors_1 = require("../utils/errors");
 function isExistingIdentity(result) {
@@ -15,7 +16,8 @@ class AuthService {
     emailService;
     historyRepo;
     revocationRepo;
-    constructor(userRepo, tokenRepo, tokenService, authTokenRepo, emailService, historyRepo, revocationRepo) {
+    ssoTicketRepo;
+    constructor(userRepo, tokenRepo, tokenService, authTokenRepo, emailService, historyRepo, revocationRepo, ssoTicketRepo) {
         this.userRepo = userRepo;
         this.tokenRepo = tokenRepo;
         this.tokenService = tokenService;
@@ -23,6 +25,7 @@ class AuthService {
         this.emailService = emailService;
         this.historyRepo = historyRepo;
         this.revocationRepo = revocationRepo;
+        this.ssoTicketRepo = ssoTicketRepo;
     }
     /**
      * Creates a central identity. Deliberately issues no session.
@@ -154,6 +157,7 @@ class AuthService {
             phone: changes.phone,
             email: changes.email,
             avatar: changes.avatar,
+            role: changes.role,
             email_verified_at: emailChanged ? null : undefined,
         });
         await this.historyRepo.record(userId, emailChanged ? 'email_changed' : 'profile_updated', ctx);
@@ -293,6 +297,57 @@ class AuthService {
         if (!user || user.email_verified_at !== null)
             return;
         await this.issueVerificationEmail(user.id, user.email);
+    }
+    /**
+     * Mints a single-use ticket another application can redeem for a session.
+     *
+     * Used for cross-domain SSO: a user logged into one application is redirected
+     * to a second one, which presents the ticket to redeemSsoTicket and receives a
+     * fresh session without the user typing a password again. The ticket is bound
+     * to the application it was minted for and lasts barely a minute, so a captured
+     * URL is worthless.
+     */
+    async createSsoTicket(userId, target, ctx = {}) {
+        if (!(0, SsoTicketRepository_1.isSsoTarget)(target)) {
+            throw new errors_1.BadRequestError('Unknown SSO target');
+        }
+        const user = await this.userRepo.findById(userId);
+        if (!user || user.status !== 'active') {
+            throw new errors_1.UnauthorizedError('User not found or inactive');
+        }
+        const issued = await this.ssoTicketRepo.issue(userId, target, config_1.config.tokens.ssoTtl);
+        await this.historyRepo.record(userId, 'sso_ticket_issued', ctx);
+        return { token: issued.token, expiresIn: config_1.config.tokens.ssoTtl };
+    }
+    /**
+     * Redeems a ticket issued by createSsoTicket for a fresh session.
+     *
+     * The ticket alone determines which account is affected, so a token cannot be
+     * replayed against a different person; the presented application must also be
+     * the one the ticket was minted for, so a ticket torn out of one redirect URL
+     * cannot start a session anywhere else.
+     */
+    async redeemSsoTicket(token, app, ctx = {}) {
+        const ticket = await this.ssoTicketRepo.peek(token);
+        if (!ticket) {
+            throw new errors_1.BadRequestError('This sign-in link is invalid or has expired');
+        }
+        if (ticket.target !== app) {
+            throw new errors_1.BadRequestError('This sign-in link is invalid or has expired');
+        }
+        const user = await this.userRepo.findById(ticket.userId);
+        if (!user || user.status !== 'active') {
+            throw new errors_1.UnauthorizedError('User not found or inactive');
+        }
+        if (config_1.config.requireEmailVerification && user.email_verified_at === null) {
+            throw new errors_1.EmailNotVerifiedError();
+        }
+        if (!(await this.ssoTicketRepo.consume(token))) {
+            throw new errors_1.BadRequestError('This sign-in link is invalid or has expired');
+        }
+        await this.userRepo.updateLastLogin(user.id);
+        await this.historyRepo.record(user.id, 'sso_redeem', ctx);
+        return this.issueTokens(user, 'sso', ctx.ip || null);
     }
     async issueVerificationEmail(userId, email) {
         const { token } = await this.authTokenRepo.issue('email_verification', userId, config_1.config.tokens.verifyTtl);

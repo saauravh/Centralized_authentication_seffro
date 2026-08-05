@@ -4,12 +4,17 @@ import { RequestContext } from '../repositories/LoginHistoryRepository';
 import { UserPublic } from '../models/User';
 import { z } from 'zod';
 
+/** Roles an identity may hold. Each application maps these onto its own actors
+ *  (Seffro: users/vendors/agents; Helppu: customers/providers/handymen). */
+const ROLES = ['user', 'vendor', 'agent', 'provider', 'handyman', 'admin'] as const;
+
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(128),
   first_name: z.string().min(1).max(100),
   last_name: z.string().min(1).max(100),
   phone: z.string().max(20).optional(),
+  role: z.enum(ROLES).default('user').optional(),
 });
 
 const loginSchema = z.object({
@@ -45,6 +50,15 @@ const resendVerificationSchema = z.object({
   email: z.string().email(),
 });
 
+const ssoTicketSchema = z.object({
+  target: z.enum(['seffro', 'helppu']),
+});
+
+const ssoRedeemSchema = z.object({
+  token: z.string().min(32).max(128),
+  app: z.enum(['seffro', 'helppu']),
+});
+
 // Only the identity fields this service owns. Password has its own endpoint, and
 // status is never client-writable.
 const updateProfileSchema = z
@@ -54,6 +68,7 @@ const updateProfileSchema = z
     phone: z.string().max(20).nullable().optional(),
     email: z.string().email().optional(),
     avatar: z.string().max(500).nullable().optional(),
+    role: z.enum(ROLES).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'At least one field must be provided',
@@ -238,6 +253,36 @@ export class AuthController {
       return handle(err, res, next);
     }
   };
+
+  /** Mints a single-use ticket for cross-application sign-on. */
+  createSsoTicket = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = ssoTicketSchema.parse(req.body);
+      if (!req.userId) {
+        return res
+          .status(401)
+          .json({ error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } });
+      }
+
+      const issued = await this.authService.createSsoTicket(req.userId, data.target, context(req));
+
+      return res.json({ token: issued.token, expires_in: issued.expiresIn });
+    } catch (err) {
+      return handle(err, res, next);
+    }
+  };
+
+  /** Redeems a ticket for a fresh session, letting the user in without a password. */
+  redeemSsoTicket = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = ssoRedeemSchema.parse(req.body);
+      const result = await this.authService.redeemSsoTicket(data.token, data.app, context(req));
+
+      return res.json(serializeAuthResult(result));
+    } catch (err) {
+      return handle(err, res, next);
+    }
+  };
 }
 
 function bearer(req: Request): string | null {
@@ -270,6 +315,7 @@ function serializeUser(user: UserPublic) {
     email_verified: user.email_verified,
     email_verified_at: user.email_verified_at,
     status: user.status,
+    role: user.role,
   };
 }
 

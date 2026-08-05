@@ -11,6 +11,9 @@ export interface CentralUser {
   /** Null until verified. Carries when, which the boolean form could not. */
   email_verified_at: Date | null;
   status: 'active' | 'suspended' | 'banned';
+  /** Primary role of the identity, chosen at registration. Applications map it
+   *  onto their own actor model (see central-auth.role_map in each app). */
+  role: string;
   failed_login_attempts: number;
   locked_until: Date | null;
   /** Access tokens issued before this instant are refused. Null means none revoked. */
@@ -26,6 +29,7 @@ export interface CreateUserInput {
   first_name: string;
   last_name: string;
   phone?: string;
+  role?: string;
 }
 
 export interface UserPublic {
@@ -39,4 +43,5 @@ export interface UserPublic {
   email_verified: boolean;
   email_verified_at: Date | null;
   status: string;
+  role: string;
 }

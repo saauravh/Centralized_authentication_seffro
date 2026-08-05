@@ -10,6 +10,7 @@ interface SeffroJwtPayload {
   first_name: string;
   last_name: string;
   email_verified: boolean;
+  role: string;
   iat: number;
   exp: number;
   jti: string;
@@ -28,6 +29,7 @@ export class TokenService {
     first_name: string;
     last_name: string;
     email_verified_at: Date | null;
+    role: string;
   }): string {
     const now = Math.floor(Date.now() / 1000);
     const payload: SeffroJwtPayload = {
@@ -37,6 +39,7 @@ export class TokenService {
       first_name: user.first_name,
       last_name: user.last_name,
       email_verified: user.email_verified_at !== null,
+      role: user.role,
       iat: now,
       exp: now + config.jwt.accessTtl,
       jti: uuidv4(),
