@@ -915,7 +915,7 @@
   "variable": [
     {
       "key": "identity_url",
-      "value": "http://localhost:3001",
+      "value": "https://auth.seffro.com",
       "type": "string"
     },
     {
