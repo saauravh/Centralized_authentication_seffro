@@ -32,6 +32,11 @@ function createRoutes(authController, tokenService, clientRepo) {
     router.get('/api/auth/me', (0, authenticate_1.authenticate)(tokenService), authController.me);
     router.patch('/api/auth/profile', (0, authenticate_1.authenticate)(tokenService), authController.updateProfile);
     router.post('/api/auth/change-password', (0, authenticate_1.authenticate)(tokenService), authController.changePassword);
+    // Cross-application SSO. The ticket endpoint needs the user's own access token
+    // (they are logged in on the originating app); redemption is called by the
+    // destination app with just its service secret, and returns a fresh session.
+    router.post('/api/auth/sso/ticket', (0, authenticate_1.authenticate)(tokenService), authController.createSsoTicket);
+    router.post('/api/auth/sso/redeem', authController.redeemSsoTicket);
     // Account recovery and verification.
     router.post('/api/auth/forgot-password', (0, rateLimiter_1.rateLimit)('sendMail'), authController.forgotPassword);
     router.post('/api/auth/reset-password', (0, rateLimiter_1.rateLimit)('redeem'), authController.resetPassword);

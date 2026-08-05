@@ -3,12 +3,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const AuthService_1 = require("../services/AuthService");
 const zod_1 = require("zod");
+/** Roles an identity may hold. Each application maps these onto its own actors
+ *  (Seffro: users/vendors/agents; Helppu: customers/providers/handymen). */
+const ROLES = ['user', 'vendor', 'agent', 'provider', 'handyman', 'admin'];
 const registerSchema = zod_1.z.object({
     email: zod_1.z.string().email(),
     password: zod_1.z.string().min(8).max(128),
     first_name: zod_1.z.string().min(1).max(100),
     last_name: zod_1.z.string().min(1).max(100),
     phone: zod_1.z.string().max(20).optional(),
+    role: zod_1.z.enum(ROLES).default('user').optional(),
 });
 const loginSchema = zod_1.z.object({
     email: zod_1.z.string().email(),
@@ -36,6 +40,13 @@ const verifyEmailSchema = zod_1.z.object({
 const resendVerificationSchema = zod_1.z.object({
     email: zod_1.z.string().email(),
 });
+const ssoTicketSchema = zod_1.z.object({
+    target: zod_1.z.enum(['seffro', 'helppu']),
+});
+const ssoRedeemSchema = zod_1.z.object({
+    token: zod_1.z.string().min(32).max(128),
+    app: zod_1.z.enum(['seffro', 'helppu']),
+});
 // Only the identity fields this service owns. Password has its own endpoint, and
 // status is never client-writable.
 const updateProfileSchema = zod_1.z
@@ -45,6 +56,7 @@ const updateProfileSchema = zod_1.z
     phone: zod_1.z.string().max(20).nullable().optional(),
     email: zod_1.z.string().email().optional(),
     avatar: zod_1.z.string().max(500).nullable().optional(),
+    role: zod_1.z.enum(ROLES).optional(),
 })
     .refine((data) => Object.keys(data).length > 0, {
     message: 'At least one field must be provided',
@@ -214,6 +226,33 @@ class AuthController {
             return handle(err, res, next);
         }
     };
+    /** Mints a single-use ticket for cross-application sign-on. */
+    createSsoTicket = async (req, res, next) => {
+        try {
+            const data = ssoTicketSchema.parse(req.body);
+            if (!req.userId) {
+                return res
+                    .status(401)
+                    .json({ error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } });
+            }
+            const issued = await this.authService.createSsoTicket(req.userId, data.target, context(req));
+            return res.json({ token: issued.token, expires_in: issued.expiresIn });
+        }
+        catch (err) {
+            return handle(err, res, next);
+        }
+    };
+    /** Redeems a ticket for a fresh session, letting the user in without a password. */
+    redeemSsoTicket = async (req, res, next) => {
+        try {
+            const data = ssoRedeemSchema.parse(req.body);
+            const result = await this.authService.redeemSsoTicket(data.token, data.app, context(req));
+            return res.json(serializeAuthResult(result));
+        }
+        catch (err) {
+            return handle(err, res, next);
+        }
+    };
 }
 exports.AuthController = AuthController;
 function bearer(req) {
@@ -244,6 +283,7 @@ function serializeUser(user) {
         email_verified: user.email_verified,
         email_verified_at: user.email_verified_at,
         status: user.status,
+        role: user.role,
     };
 }
 function serializeAuthResult(result) {

@@ -23,14 +23,15 @@ class UserRepository {
     }
     async create(input) {
         const hashedPassword = await bcryptjs_1.default.hash(input.password, SALT_ROUNDS);
-        const result = await (0, database_1.query)(`INSERT INTO central_users (uuid, email, password, first_name, last_name, phone)
-       VALUES (?, ?, ?, ?, ?, ?)`, [
+        const result = await (0, database_1.query)(`INSERT INTO central_users (uuid, email, password, first_name, last_name, phone, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`, [
             crypto_1.default.randomUUID(),
             input.email,
             hashedPassword,
             input.first_name,
             input.last_name,
             input.phone || null,
+            input.role || 'user',
         ]);
         return this.findById(result.insertId);
     }
@@ -66,7 +67,7 @@ class UserRepository {
      * would let a client write to `password` or `status`.
      */
     async updateProfile(id, changes) {
-        const allowed = ['first_name', 'last_name', 'phone', 'email', 'avatar', 'email_verified_at'];
+        const allowed = ['first_name', 'last_name', 'phone', 'email', 'avatar', 'email_verified_at', 'role'];
         const sets = [];
         const values = [];
         for (const column of allowed) {
@@ -103,6 +104,7 @@ class UserRepository {
             email_verified: user.email_verified_at !== null,
             email_verified_at: user.email_verified_at,
             status: user.status,
+            role: user.role,
         };
     }
 }

@@ -24,8 +24,8 @@ export class UserRepository {
   async create(input: CreateUserInput): Promise<CentralUser> {
     const hashedPassword = await bcrypt.hash(input.password, SALT_ROUNDS);
     const result = await query(
-      `INSERT INTO central_users (uuid, email, password, first_name, last_name, phone)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO central_users (uuid, email, password, first_name, last_name, phone, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         crypto.randomUUID(),
         input.email,
@@ -33,6 +33,7 @@ export class UserRepository {
         input.first_name,
         input.last_name,
         input.phone || null,
+        input.role || 'user',
       ]
     );
     return this.findById((result as any).insertId) as Promise<CentralUser>;
@@ -89,9 +90,10 @@ export class UserRepository {
       email?: string;
       avatar?: string | null;
       email_verified_at?: Date | null;
+      role?: string;
     }
   ): Promise<CentralUser> {
-    const allowed = ['first_name', 'last_name', 'phone', 'email', 'avatar', 'email_verified_at'] as const;
+    const allowed = ['first_name', 'last_name', 'phone', 'email', 'avatar', 'email_verified_at', 'role'] as const;
 
     const sets: string[] = [];
     const values: any[] = [];
@@ -135,6 +137,7 @@ export class UserRepository {
       email_verified: user.email_verified_at !== null,
       email_verified_at: user.email_verified_at,
       status: user.status,
+      role: user.role,
     };
   }
 }

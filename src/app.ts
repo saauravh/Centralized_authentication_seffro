@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { UserRepository } from './repositories/UserRepository';
 import { TokenRepository } from './repositories/TokenRepository';
 import { AuthTokenRepository } from './repositories/AuthTokenRepository';
+import { SsoTicketRepository } from './repositories/SsoTicketRepository';
 import { LoginHistoryRepository } from './repositories/LoginHistoryRepository';
 import { RevocationRepository } from './repositories/RevocationRepository';
 import { ServiceClientRepository } from './repositories/ServiceClientRepository';
@@ -44,6 +45,7 @@ export async function createApp() {
   const userRepo = new UserRepository();
   const tokenRepo = new TokenRepository();
   const authTokenRepo = new AuthTokenRepository();
+  const ssoTicketRepo = new SsoTicketRepository();
   const historyRepo = new LoginHistoryRepository();
   const revocationRepo = new RevocationRepository();
   const clientRepo = new ServiceClientRepository();
@@ -56,7 +58,8 @@ export async function createApp() {
     authTokenRepo,
     emailService,
     historyRepo,
-    revocationRepo
+    revocationRepo,
+    ssoTicketRepo
   );
 
   const authController = new AuthController(authService);

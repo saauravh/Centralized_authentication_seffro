@@ -5,6 +5,7 @@ interface SeffroJwtPayload {
     first_name: string;
     last_name: string;
     email_verified: boolean;
+    role: string;
     iat: number;
     exp: number;
     jti: string;
@@ -18,6 +19,7 @@ export declare class TokenService {
         first_name: string;
         last_name: string;
         email_verified_at: Date | null;
+        role: string;
     }): string;
     /**
      * Verifies against the key the token names.

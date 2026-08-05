@@ -33,6 +33,10 @@ exports.config = {
     tokens: {
         resetTtl: parseInt(process.env.RESET_TOKEN_TTL || '3600', 10),
         verifyTtl: parseInt(process.env.VERIFY_TOKEN_TTL || '86400', 10),
+        // SSO tickets ride in a redirect URL and are single-use, so they live for
+        // barely a minute — long enough for the browser to land, short enough that a
+        // captured link is worthless.
+        ssoTtl: parseInt(process.env.SSO_TOKEN_TTL || '60', 10),
     },
     // When true, an unverified account cannot obtain a session at all. Registration
     // never issues one either way — this governs whether login is also refused.

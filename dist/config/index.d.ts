@@ -21,6 +21,7 @@ export declare const config: {
     tokens: {
         resetTtl: number;
         verifyTtl: number;
+        ssoTtl: number;
     };
     requireEmailVerification: boolean;
     lockout: {

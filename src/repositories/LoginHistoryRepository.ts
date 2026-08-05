@@ -14,7 +14,9 @@ export type LoginEvent =
   | 'profile_updated'
   | 'email_changed'
   | 'tokens_revoked'
-  | 'account_locked';
+  | 'account_locked'
+  | 'sso_ticket_issued'
+  | 'sso_redeem';
 
 export interface RequestContext {
   ip?: string | null;
