@@ -82,6 +82,17 @@ export class AuthService {
       return { userExists: true };
     }
 
+    // A mobile number is a login identifier, so it has to name one account.
+    // Unlike the email case this is an error rather than a "you already have an
+    // identity" answer: the address is what identifies the person signing up,
+    // and a number reused by a different address is a mistake or a hijack.
+    if (input.phone) {
+      const holders = await this.userRepo.findAllByPhone(input.phone);
+      if (holders.length > 0) {
+        throw new ConflictError('That mobile number is already registered');
+      }
+    }
+
     const user = await this.userRepo.create(input);
     await this.historyRepo.record(user.id, 'register', ctx);
     await this.issueVerificationEmail(user.id, user.email);
@@ -92,15 +103,19 @@ export class AuthService {
     };
   }
 
+  /**
+   * @param identifier  Email address or mobile number — whichever the user
+   *                    typed into the single field the login forms present.
+   */
   async login(
-    email: string,
+    identifier: string,
     password: string,
     device?: string,
     ctx: RequestContext = {}
   ): Promise<AuthResult> {
-    const user = await this.userRepo.findByEmail(email);
+    const user = await this.userRepo.findByIdentifier(identifier);
     if (!user) {
-      throw new UnauthorizedError('Invalid email or password');
+      throw new UnauthorizedError('Invalid credentials');
     }
 
     // Checked before the password so a locked account stops absorbing guesses
@@ -126,7 +141,7 @@ export class AuthService {
       }
 
       await this.historyRepo.record(user.id, 'login_failed', ctx);
-      throw new UnauthorizedError('Invalid email or password');
+      throw new UnauthorizedError('Invalid credentials');
     }
 
     // Checked after the password so a wrong password and a suspended account are
@@ -224,6 +239,15 @@ export class AuthService {
       const taken = await this.userRepo.findByEmail(changes.email!);
       if (taken && taken.id !== userId) {
         throw new ConflictError('That email address is already in use');
+      }
+    }
+
+    // Same reasoning as the email above, now that a number can be logged in
+    // with: it has to keep pointing at exactly one identity.
+    if (changes.phone) {
+      const holders = await this.userRepo.findAllByPhone(changes.phone);
+      if (holders.some((holder) => holder.id !== userId)) {
+        throw new ConflictError('That mobile number is already in use');
       }
     }
 

@@ -17,10 +17,37 @@ const registerSchema = z.object({
   role: z.enum(ROLES).default('user').optional(),
 });
 
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string(),
-});
+/**
+ * Login takes one identifier, which may be an email address or a mobile number.
+ *
+ * `email` is not validated as an address any more and `phone` is accepted as an
+ * alias, so every existing client keeps working whichever field name it already
+ * sends and whichever of the two the user typed into it.
+ */
+const loginSchema = z
+  .object({
+    identifier: z.string().min(3).max(255).optional(),
+    email: z.string().min(3).max(255).optional(),
+    phone: z.string().min(3).max(255).optional(),
+    password: z.string(),
+  })
+  .refine((data) => loginIdentifier(data) !== null, {
+    message: 'An email address or mobile number is required',
+    path: ['identifier'],
+  });
+
+function loginIdentifier(data: {
+  identifier?: string;
+  email?: string;
+  phone?: string;
+}): string | null {
+  for (const value of [data.identifier, data.email, data.phone]) {
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value.trim();
+    }
+  }
+  return null;
+}
 
 const refreshSchema = z.object({
   refresh_token: z.string().min(32).max(128),
@@ -103,7 +130,7 @@ export class AuthController {
     try {
       const data = loginSchema.parse(req.body);
       const result = await this.authService.login(
-        data.email,
+        loginIdentifier(data) as string,
         data.password,
         req.headers['user-agent'],
         context(req)
