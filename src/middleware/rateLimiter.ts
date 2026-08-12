@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
+import { looksLikeEmail, normalizePhone } from '../utils/phone';
 
 export type LimitType = 'login' | 'register' | 'sendMail' | 'redeem' | 'global';
 
@@ -60,11 +61,31 @@ export function rateLimitClient() {
  * meaningful when the app forwards it (see `trust proxy` in app.ts).
  */
 function keyFor(req: Request, type: LimitType): string {
-  const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : null;
+  const account = accountKey(req);
   const ip = req.ip || 'unknown';
 
-  if (type === 'global' || !email) return `${type}:ip:${ip}`;
-  return `${type}:email:${email}`;
+  if (type === 'global' || !account) return `${type}:ip:${ip}`;
+  return `${type}:account:${account}`;
+}
+
+/**
+ * The account a request names, whichever identifier it used.
+ *
+ * A mobile number is normalised so that the same account lands in one bucket no
+ * matter how the attacker formats the number between attempts.
+ */
+function accountKey(req: Request): string | null {
+  for (const field of ['identifier', 'email', 'phone'] as const) {
+    const value = req.body?.[field];
+    if (typeof value !== 'string' || value.trim() === '') continue;
+
+    const trimmed = value.trim();
+    return looksLikeEmail(trimmed)
+      ? trimmed.toLowerCase()
+      : normalizePhone(trimmed) ?? trimmed.toLowerCase();
+  }
+
+  return null;
 }
 
 export function rateLimit(type: LimitType) {

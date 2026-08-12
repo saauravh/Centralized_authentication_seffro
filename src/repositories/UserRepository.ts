@@ -4,12 +4,75 @@ import { CentralUser, CreateUserInput, UserPublic } from '../models/User';
 // C++ toolchain, so the service builds identically on every deploy target.
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { normalizePhone, looksLikeEmail, PHONE_KEY_LENGTH } from '../utils/phone';
+import { logger } from '../utils/logger';
 
 const SALT_ROUNDS = 10;
+
+/**
+ * Strips the separators people type into a phone field. Not a full "digits
+ * only" cleanup — MySQL has no portable regex replace — but enough to make the
+ * suffix comparison a useful filter. The exact match happens in findAllByPhone.
+ */
+const CLEAN_PHONE_SQL =
+  "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', ''), ')', ''), '.', ''), '+', '')";
 
 export class UserRepository {
   async findByEmail(email: string): Promise<CentralUser | null> {
     return queryOne('SELECT * FROM central_users WHERE email = ?', [email]);
+  }
+
+  /**
+   * Every identity carrying this mobile number.
+   *
+   * `phone` is not unique in the schema, so this returns a list: callers decide
+   * what a collision means. The SQL only narrows the scan — it compares the last
+   * {@link PHONE_KEY_LENGTH} characters after the separators a user is likely to
+   * have typed — and the digits are then compared exactly in JS.
+   */
+  async findAllByPhone(phone: string): Promise<CentralUser[]> {
+    const key = normalizePhone(phone);
+    if (!key) {
+      return [];
+    }
+
+    const rows: CentralUser[] = await query(
+      `SELECT * FROM central_users
+        WHERE phone IS NOT NULL AND phone <> ''
+          AND RIGHT(${CLEAN_PHONE_SQL}, ${PHONE_KEY_LENGTH}) = ?`,
+      [key]
+    );
+
+    return rows.filter((row) => row.phone !== null && normalizePhone(row.phone) === key);
+  }
+
+  /**
+   * The single identity holding this number, or null.
+   *
+   * A number shared by more than one identity resolves to nobody. Registration
+   * and profile updates both refuse duplicates, so this is the historical case —
+   * and picking one of them would hand the caller a session on an account that
+   * may not be theirs.
+   */
+  async findByPhone(phone: string): Promise<CentralUser | null> {
+    const matches = await this.findAllByPhone(phone);
+
+    if (matches.length > 1) {
+      logger.warn('Mobile number resolves to more than one identity', {
+        count: matches.length,
+        ids: matches.map((u) => u.id),
+      });
+      return null;
+    }
+
+    return matches[0] || null;
+  }
+
+  /** Resolves whichever of the two identifiers a login form collected. */
+  async findByIdentifier(identifier: string): Promise<CentralUser | null> {
+    const value = identifier.trim();
+
+    return looksLikeEmail(value) ? this.findByEmail(value) : this.findByPhone(value);
   }
 
   async findById(id: number): Promise<CentralUser | null> {
