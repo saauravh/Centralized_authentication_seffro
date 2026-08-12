@@ -70,6 +70,7 @@ These are called by your Laravel backends, never by a browser.
 | POST | `/api/auth/reset-password` | Redeem a reset token |
 | POST | `/api/auth/verify-email` | Redeem a verification token |
 | POST | `/api/auth/resend-verification` | Re-send a verification link |
+| POST | `/api/auth/check-verification` | Is an address registered, and is it verified? |
 | GET | `/api/health` | Health check (unauthenticated) |
 
 **Registration is not authentication.** `register` returns `201` with

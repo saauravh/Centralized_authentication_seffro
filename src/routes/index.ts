@@ -53,6 +53,7 @@ export function createRoutes(
   router.post('/api/auth/reset-password', rateLimit('redeem'), authController.resetPassword);
   router.post('/api/auth/verify-email', rateLimit('redeem'), authController.verifyEmail);
   router.post('/api/auth/resend-verification', rateLimit('sendMail'), authController.resendVerification);
+  router.post('/api/auth/check-verification', rateLimit('lookup'), authController.checkVerification);
 
   // Unauthenticated: used by load balancers and deploy checks.
   router.get('/api/health', (req, res) => {

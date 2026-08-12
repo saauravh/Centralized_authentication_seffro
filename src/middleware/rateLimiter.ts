@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { looksLikeEmail, normalizePhone } from '../utils/phone';
 
-export type LimitType = 'login' | 'register' | 'sendMail' | 'redeem' | 'global';
+export type LimitType = 'login' | 'register' | 'sendMail' | 'redeem' | 'lookup' | 'global';
 
 const limiters: Record<LimitType, RateLimiterMemory> = {
   login: new RateLimiterMemory({ points: 5, duration: 60, blockDuration: 300 }),
@@ -14,6 +14,9 @@ const limiters: Record<LimitType, RateLimiterMemory> = {
   // guessing is not the threat, and a tight limit here would let an attacker
   // lock a legitimate user out of their own reset link.
   redeem: new RateLimiterMemory({ points: 15, duration: 900 }),
+  // Account-state lookups (email verification status). Per-address and
+  // generous: an app polls this while a user waits for a verification email.
+  lookup: new RateLimiterMemory({ points: 30, duration: 60 }),
   global: new RateLimiterMemory({ points: 100, duration: 60 }),
 };
 
