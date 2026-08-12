@@ -104,6 +104,32 @@ export class AuthService {
   }
 
   /**
+   * The verification state of one address, without proving the caller owns it.
+   *
+   * Trusted only by our own backends (serviceAuth guards the route), so this is
+   * the cheap answer to "can this user log in yet?" that login itself cannot
+   * give: login enforces verification and therefore cannot report on an
+   * unverified account. Unknown addresses answer `exists: false`, matching the
+   * silent stance of forgotPassword and resendVerification.
+   */
+  async checkEmailVerification(
+    email: string
+  ): Promise<{ exists: boolean; email_verified?: boolean; email_verified_at?: Date | null }> {
+    const user = await this.userRepo.findByEmail(email);
+    if (!user) {
+      return { exists: false };
+    }
+
+    const publicUser = this.userRepo.toPublic(user);
+
+    return {
+      exists: true,
+      email_verified: publicUser.email_verified,
+      email_verified_at: publicUser.email_verified_at,
+    };
+  }
+
+  /**
    * @param identifier  Email address or mobile number — whichever the user
    *                    typed into the single field the login forms present.
    */

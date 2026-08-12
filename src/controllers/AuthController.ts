@@ -77,6 +77,10 @@ const resendVerificationSchema = z.object({
   email: z.string().email(),
 });
 
+const checkVerificationSchema = z.object({
+  email: z.string().email(),
+});
+
 const ssoTicketSchema = z.object({
   target: z.enum(['seffro', 'helppu']),
 });
@@ -276,6 +280,23 @@ export class AuthController {
       const data = resendVerificationSchema.parse(req.body);
       await this.authService.resendVerification(data.email);
       return res.json({ success: true });
+    } catch (err) {
+      return handle(err, res, next);
+    }
+  };
+
+  /**
+   * Answers whether an address is registered and, if so, verified.
+   *
+   * Only our own backends may call this (serviceAuth), so it can be honest
+   * about a fact login hides: an unverified account still gets its status back
+   * here, while login would have refused with EMAIL_NOT_VERIFIED.
+   */
+  checkVerification = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = checkVerificationSchema.parse(req.body);
+      const result = await this.authService.checkEmailVerification(data.email);
+      return res.json(result);
     } catch (err) {
       return handle(err, res, next);
     }

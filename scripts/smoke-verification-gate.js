@@ -36,6 +36,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   check('register flags verification_required', reg.body?.verification_required === true, reg.body);
   check('register still issues no session', !reg.body?.access_token, reg.body);
 
+  const unknown = await call('/api/auth/check-verification', { body: { email: `nobody${stamp}@example.com` } });
+  check('check-verification: unknown address is exists=false', unknown.body?.exists === false, unknown.body);
+
+  const pending = await call('/api/auth/check-verification', { body: { email } });
+  check('check-verification: known address exists', pending.body?.exists === true, pending.body);
+  check('check-verification: reports not yet verified',
+    pending.body?.email_verified === false && pending.body?.email_verified_at === null, pending.body);
+
   // This is the hole that returning a token from register would have opened.
   const blocked = await call('/api/auth/login', { body: { email, password } });
   check('unverified account cannot log in', blocked.status === 403, blocked.body);
@@ -51,6 +59,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const verified = await call('/api/auth/verify-email', { body: { email, token } });
   check('verification succeeds', verified.status === 200, verified.body);
+
+  const confirmed = await call('/api/auth/check-verification', { body: { email } });
+  check('check-verification: now reports verified',
+    confirmed.body?.email_verified === true && confirmed.body?.email_verified_at !== null, confirmed.body);
 
   const allowed = await call('/api/auth/login', { body: { email, password } });
   check('verified account can log in', allowed.status === 200, allowed.body);
