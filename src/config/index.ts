@@ -30,7 +30,9 @@ export const config = {
   // and are the weakest link in the account-recovery chain.
   tokens: {
     resetTtl: parseInt(process.env.RESET_TOKEN_TTL || '3600', 10),
-    verifyTtl: parseInt(process.env.VERIFY_TOKEN_TTL || '86400', 10),
+    // Now a 6-digit code a person types into the app rather than a link they
+    // click, so it gets an OTP-length TTL instead of the old 24h link TTL.
+    verifyTtl: parseInt(process.env.VERIFY_TOKEN_TTL || '600', 10),
     // SSO tickets ride in a redirect URL and are single-use, so they live for
     // barely a minute — long enough for the browser to land, short enough that a
     // captured link is worthless.

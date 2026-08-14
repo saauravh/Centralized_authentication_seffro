@@ -70,7 +70,8 @@ const resetPasswordSchema = z.object({
 
 const verifyEmailSchema = z.object({
   email: z.string().email(),
-  token: z.string().min(32).max(128),
+  // 6-digit code, emailed for manual entry rather than carried in a link.
+  token: z.string().length(6).regex(/^\d{6}$/),
 });
 
 const resendVerificationSchema = z.object({

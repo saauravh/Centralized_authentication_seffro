@@ -542,7 +542,7 @@ export class AuthService {
   }
 
   private async issueVerificationEmail(userId: number, email: string): Promise<void> {
-    const { token } = await this.authTokenRepo.issue(
+    const { token } = await this.authTokenRepo.issueOtp(
       'email_verification',
       userId,
       config.tokens.verifyTtl

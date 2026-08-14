@@ -40,14 +40,16 @@ export class EmailService {
     });
   }
 
-  async sendVerification(email: string, token: string): Promise<void> {
-    const url = this.buildLink(config.links.verifyUrl, { token, email });
-    const hours = Math.round(config.tokens.verifyTtl / 3600);
+  async sendVerification(email: string, code: string): Promise<void> {
+    const minutes = Math.round(config.tokens.verifyTtl / 60);
 
     await this.send({
       to: email,
-      subject: 'Verify your email address',
-      text: `Please confirm your email address.\n\n${url}\n\nThis link expires in ${hours} hours.`,
+      subject: 'Your verification code',
+      text:
+        `Your verification code is: ${code}\n\n` +
+        `Enter this code in the app to verify your email address. ` +
+        `It expires in ${minutes} minutes.`,
     });
   }
 

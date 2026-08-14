@@ -40,12 +40,39 @@ export class AuthTokenRepository {
    * purpose so a fresh request always supersedes older emails.
    */
   async issue(purpose: TokenPurpose, userId: number, ttlSeconds: number): Promise<IssuedToken> {
+    return this.issueWithToken(purpose, userId, ttlSeconds, crypto.randomBytes(32).toString('hex'));
+  }
+
+  /**
+   * Same as issue(), but with a short numeric code instead of a 256-bit hex
+   * string — for tokens a person types in by hand (e.g. an emailed
+   * verification code) rather than ones carried in a link.
+   *
+   * Lower entropy is fine here: the redeem rate limiter caps guesses per
+   * account, and the short TTL these are issued with closes the window long
+   * before that limit could exhaust a 6-digit keyspace.
+   */
+  async issueOtp(
+    purpose: TokenPurpose,
+    userId: number,
+    ttlSeconds: number,
+    digits = 6
+  ): Promise<IssuedToken> {
+    const code = crypto.randomInt(0, 10 ** digits).toString().padStart(digits, '0');
+    return this.issueWithToken(purpose, userId, ttlSeconds, code);
+  }
+
+  private async issueWithToken(
+    purpose: TokenPurpose,
+    userId: number,
+    ttlSeconds: number,
+    token: string
+  ): Promise<IssuedToken> {
     const table = TABLES[purpose];
     await query(`UPDATE ${table} SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL`, [
       userId,
     ]);
 
-    const token = crypto.randomBytes(32).toString('hex');
     await query(
       `INSERT INTO ${table} (user_id, token_hash, expires_at)
        VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND))`,
